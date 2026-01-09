@@ -67,14 +67,17 @@ pip install -r requirements.txt
 
 ### 2. 配置应用
 
-#### 方式一：使用配置文件
+#### 方式一：使用配置文件（推荐）
 
 ```bash
+# 创建配置目录（如果使用新的目录结构）
+mkdir -p data/config
+
 # 复制配置文件模板
-cp config/config.yaml.example config/config.yaml
+cp config/config.yaml.example data/config/config.yaml
 
 # 编辑配置文件
-nano config/config.yaml  # 或使用其他编辑器
+nano data/config/config.yaml  # 或使用其他编辑器
 ```
 
 #### 方式二：使用环境变量
@@ -85,6 +88,21 @@ cp .env.example .env
 
 # 编辑环境变量文件
 nano .env
+```
+
+**重要提示**: 从v1.1.0版本开始，配置文件建议放在 `data/config/` 目录下，这样可以方便地使用单个volume挂载所有数据和配置。
+
+### 3. 首次运行（推荐CLI交互式模式）
+
+```bash
+# 运行CLI交互式模式进行首次配置和认证
+python main.py --cli-v2
+
+# 在交互式菜单中选择:
+# 1. 认证和连接测试
+# 2. 如果需要二步验证，按提示输入验证码
+# 3. 测试VRChat API和QQ Bot连接
+# 4. 配置群组信息
 ```
 
 ### 3. 配置Napcat
@@ -108,10 +126,13 @@ napcat
 python main.py
 ```
 
-#### CLI模式（交互式调试）
+#### CLI交互式模式（推荐用于调试和首次配置）
 
 ```bash
-# 运行CLI模式
+# 运行CLI交互式模式（支持验证码输入、认证测试等）
+python main.py --cli-v2
+
+# 运行旧版CLI模式
 python main.py --cli
 ```
 
@@ -122,8 +143,16 @@ python main.py --cli
 python main.py --config /path/to/config.yaml
 
 # CLI模式 + 指定配置
-python main.py --cli --config /path/to/config.yaml
+python main.py --cli-v2 --config /path/to/config.yaml
 ```
+
+#### 运行模式对比
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| 服务模式 | 后台运行，自动处理事件 | 生产环境 |
+| CLI模式 | 简单命令行，基本功能 | 快速测试 |
+| CLI交互式模式 | 交互式菜单，完整功能 | 首次配置、调试、故障排除 |
 
 ## 配置文件说明
 
@@ -165,7 +194,14 @@ vrchat:
     enabled: false
     method: "totp"             # totp 或 email
     totp_secret: ""            # TOTP密钥（可选）
+    auto_generate: false       # 是否自动生成TOTP验证码
 ```
+
+**关于二步验证:**
+- 如果设置了 `totp_secret` 和 `auto_generate: true`，程序会自动生成TOTP验证码
+- 如果设置了 `totp_secret` 但 `auto_generate: false`，需要在CLI模式下手动输入验证码
+- 如果没有设置 `totp_secret`，需要在CLI模式下手动输入邮箱验证码
+- Cookie会自动保存到 `data/vrchat_cookie.json`，有效期30天
 
 ### 群组配置 (groups)
 
@@ -291,6 +327,11 @@ NAPCAT_ACCESS_TOKEN=your_token
 3. 检查代理设置（国内网络需要）
 4. 查看 `logs/vrchat_api.log` 获取详细错误信息
 
+**二步验证问题:**
+- 如果设置了 `auto_generate: true` 但失败，检查TOTP密钥是否正确
+- 如果需要手动输入验证码，使用 `--cli-v2` 模式
+- Cookie保存在 `data/vrchat_cookie.json`，有效期30天
+
 ### QQ Bot连接失败
 
 1. 确保Napcat正在运行
@@ -304,6 +345,26 @@ NAPCAT_ACCESS_TOKEN=your_token
 2. 确认群组已启用
 3. 检查VRChat用户ID格式是否正确
 4. 查看 `logs/app.log` 获取处理详情
+
+### Cookie相关问题
+
+1. **Cookie文件位置**: `data/vrchat_cookie.json`
+2. **有效期**: 30天
+3. **如果认证失败**: 删除Cookie文件后重新认证
+4. **权限问题**: 确保程序有读写Cookie文件的权限
+
+### CLI交互式模式
+
+如果遇到认证问题，推荐使用CLI交互式模式：
+
+```bash
+python main.py --cli-v2
+
+# 在菜单中选择:
+# 1. 认证和连接测试
+# 2. 如果需要验证码，按提示输入
+# 3. 测试API连接
+```
 
 ## 性能优化
 
@@ -324,24 +385,3 @@ NAPCAT_ACCESS_TOKEN=your_token
 
 ### v1.0.0
 - 初始版本
-- 支持自动入群审查和绑定
-- 支持手动绑定管理
-- 支持VRChat角色管理
-- 支持代理和二步验证
-
-## 贡献
-
-欢迎提交Issue和Pull Request！
-
-## 许可证
-
-MIT License
-
-## 技术支持
-
-如有问题，请查看：
-- 项目Wiki
-- Issue Tracker
-- 日志文件
-- VRChat API文档
-- Napcat文档

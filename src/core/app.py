@@ -14,11 +14,13 @@ import os
 from dotenv import load_dotenv
 
 from ..api.async_vrchat_api import AsyncVRChatAPIClient
+from ..api.async_vrchat_api_v2 import ImprovedAsyncVRChatAPIClient
 from ..core.async_qq_bot import AsyncQQBotManager
 from ..core.data_manager import DataManager
 from ..utils.message_template import MessageTemplate, DEFAULT_TEMPLATES
 from ..utils.logger import AppLogger
 from ..handlers.group_handler import GroupHandler
+from ..core.cli_handler import CLIHandler
 
 
 class QQVRCBindingApp:
@@ -169,12 +171,23 @@ class QQVRCBindingApp:
             # TOTP密钥
             totp_secret = vrc_config.get('two_factor', {}).get('totp_secret')
             
-            # 创建API客户端
-            self.vrc_api = AsyncVRChatAPIClient(
+            # 数据目录配置
+            data_dir = self.config.get('app', {}).get('data_dir', './data')
+            cookie_file = Path(data_dir) / 'vrchat_cookie.json'
+            
+            # TOTP配置
+            totp_config = vrc_config.get('two_factor', {})
+            totp_secret = totp_config.get('totp_secret')
+            auto_generate_totp = totp_config.get('auto_generate', False)
+            
+            # 创建改进版API客户端
+            self.vrc_api = ImprovedAsyncVRChatAPIClient(
                 username=username,
                 password=password,
+                cookie_file=str(cookie_file),
                 proxy_config=proxy_config,
-                totp_secret=totp_secret
+                totp_secret=totp_secret,
+                auto_generate_totp=auto_generate_totp
             )
             
             logger.success("VRChat API客户端初始化完成")
@@ -215,11 +228,13 @@ class QQVRCBindingApp:
             data_file = db_config.get('file_path', './data/user_bindings.json')
             backup_enabled = db_config.get('backup_enabled', True)
             backup_interval = db_config.get('backup_interval', 86400)
+            config_dir = app_config.get('config_dir', './data/config')
             
             self.data_manager = DataManager(
                 data_file=data_file,
                 backup_enabled=backup_enabled,
-                backup_interval=backup_interval
+                backup_interval=backup_interval,
+                config_dir=config_dir
             )
             
             logger.success("数据管理器初始化完成")
@@ -643,3 +658,18 @@ class QQVRCBindingApp:
             status['statistics'] = self.data_manager.get_statistics()
         
         return status
+    
+    async def run_cli_v2(self):
+        """运行改进版CLI（交互式）"""
+        try:
+            logger.info("启动改进版CLI模式...")
+            
+            # 初始化CLI处理器
+            cli_handler = CLIHandler(self)
+            
+            # 运行交互式模式
+            await cli_handler.run_interactive_mode()
+            
+        except Exception as e:
+            logger.exception(f"CLI模式运行失败: {e}")
+            raise

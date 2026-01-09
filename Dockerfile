@@ -27,7 +27,8 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser main.py .
-COPY --chown=appuser:appuser config/ ./config/
+# 注意：配置文件应在运行时通过volume挂载到/data/config
+# 这里不复制配置文件，使用默认配置或环境变量
 
 # 创建必要目录
 RUN mkdir -p /app/data /app/logs

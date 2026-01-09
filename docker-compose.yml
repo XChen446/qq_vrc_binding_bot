@@ -22,11 +22,9 @@ services:
       # 应用配置
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      # 配置文件
-      - ./config:/app/config
-      # 数据目录
+      # 挂载整个数据目录（包含配置、数据、Cookie等）
       - ./data:/app/data
-      # 日志目录
+      # 日志目录（可选，如果不挂载则日志在data/logs下）
       - ./logs:/app/logs
     networks:
       - qq-vrc-bot-network

@@ -6,8 +6,11 @@ app:
   version: "1.0.0"
   enabled: true
   log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  # 数据目录（包含配置、数据、Cookie等）
   data_dir: "./data"
   log_dir: "./logs"
+  # 配置文件目录（默认在data_dir下）
+  config_dir: "./data/config"
 
 # Napcat QQ Bot配置
 napcat:
@@ -34,6 +37,8 @@ vrchat:
     method: "totp"  
     # TOTP密钥（可选，用于自动生成验证码）
     totp_secret: ""
+    # 是否自动生成TOTP验证码（如果提供了密钥）
+    auto_generate: false
 
 # 群组配置
 groups:
@@ -42,7 +47,7 @@ groups:
     - group_id: 123456789
       enabled: true
       # VRChat群组ID
-      vrc_group_id: "grp_fdd4cdf6-b3e0-4be3-a040-5b8abf2617f4"
+      vrc_group_id: "grp_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
       # 自动分配的角色ID
       auto_assign_role: "rol_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
       # 入群审查关键词

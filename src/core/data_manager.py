@@ -17,7 +17,7 @@ class DataManager:
     """数据管理器"""
     
     def __init__(self, data_file: str, backup_enabled: bool = True, 
-                 backup_interval: int = 86400):
+                 backup_interval: int = 86400, config_dir: Optional[str] = None):
         """
         初始化数据管理器
         
@@ -30,9 +30,14 @@ class DataManager:
         self.backup_enabled = backup_enabled
         self.backup_interval = backup_interval
         self.last_backup_time = 0
+        self.config_dir = Path(config_dir) if config_dir else None
         
         # 确保数据目录存在
         self.data_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # 确保配置目录存在
+        if self.config_dir:
+            self.config_dir.mkdir(parents=True, exist_ok=True)
         
         # 初始化数据结构
         self.data = self._load_data()

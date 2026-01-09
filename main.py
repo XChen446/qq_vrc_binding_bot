@@ -23,6 +23,7 @@ async def main():
     try:
         # 检查命令行参数
         cli_mode = '--cli' in sys.argv
+        cli_v2_mode = '--cli-v2' in sys.argv
         config_file = None
         
         # 解析命令行参数
@@ -42,8 +43,12 @@ async def main():
         await app.initialize()
         
         # 根据模式运行
-        if cli_mode:
-            logger.info("运行CLI模式")
+        if cli_v2_mode:
+            logger.info("运行CLI交互式模式")
+            await app.authenticate_vrc(cli_mode=True)
+            await app.run_cli_v2()
+        elif cli_mode:
+            logger.info("运行CLI模式（旧版）")
             await app.run_cli()
         else:
             logger.info("运行服务模式")
