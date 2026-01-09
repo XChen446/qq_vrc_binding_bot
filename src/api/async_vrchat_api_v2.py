@@ -4,11 +4,14 @@
 """
 
 import asyncio
+import base64
 import json
 import re
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote
+
 import aiohttp
 from loguru import logger
 import pyotp
@@ -167,17 +170,18 @@ class ImprovedAsyncVRChatAPIClient:
             
             # 密码认证
             logger.info("开始VRChat API密码认证...")
-            
-            auth_data = {
-                'userId': self.username,
-                'password': self.password,
-            }
-            
-            async with self.session.post(
-                f"{self.BASE_URL}/auth/user",
-                json=auth_data,
-                params={'apiKey': self.api_key},
-                proxy=self.proxy_config.get('https') if self.proxy_config else None
+
+            username = self.username
+            password = self.password
+            auth_string = f"{quote(username)}:{quote(password)}"
+            auth_base64 = base64.b64encode(auth_string.encode()).decode()
+
+            async with self.session.get(
+                    f"{self.BASE_URL}/auth/user",
+                    headers={
+                        "Authorization": "Basic " + auth_base64
+                    },
+                    proxy=self.proxy_config.get('https') if self.proxy_config else None
             ) as response:
                 
                 logger.debug(f"认证响应状态: {response.status}")
@@ -302,15 +306,16 @@ class ImprovedAsyncVRChatAPIClient:
     async def _finish_auth(self) -> Tuple[bool, str]:
         """完成认证流程"""
         try:
-            auth_data = {
-                'userId': self.username,
-                'password': self.password,
-            }
+            username = self.username
+            password = self.password
+            auth_string = f"{quote(username)}:{quote(password)}"
+            auth_base64 = base64.b64encode(auth_string.encode()).decode()
             
-            async with self.session.post(
+            async with self.session.get(
                 f"{self.BASE_URL}/auth/user",
-                json=auth_data,
-                params={'apiKey': self.api_key},
+                headers={
+                    "Authorization": "Basic " + auth_base64
+                },
                 proxy=self.proxy_config.get('https') if self.proxy_config else None
             ) as response:
                 
