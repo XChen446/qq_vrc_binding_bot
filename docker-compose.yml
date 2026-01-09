@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  qq-vrc-bot:
+    build: .
+    container_name: qq-vrc-binding-bot
+    restart: unless-stopped
+    environment:
+      # VRChat配置
+      - VRCHAT_USERNAME=${VRCHAT_USERNAME:-}
+      - VRCHAT_PASSWORD=${VRCHAT_PASSWORD:-}
+      - TOTP_SECRET=${TOTP_SECRET:-}
+      
+      # 代理配置
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      
+      # Napcat配置
+      - NAPCAT_ACCESS_TOKEN=${NAPCAT_ACCESS_TOKEN:-}
+      - NAPCAT_WEBHOOK_URL=${NAPCAT_WEBHOOK_URL:-}
+      
+      # 应用配置
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      # 配置文件
+      - ./config:/app/config
+      # 数据目录
+      - ./data:/app/data
+      # 日志目录
+      - ./logs:/app/logs
+    networks:
+      - qq-vrc-bot-network
+    depends_on:
+      - napcat
+    
+  # Napcat服务（可选，如果使用外部Napcat可以注释掉）
+  napcat:
+    image: napneko/napcat:latest
+    container_name: napcat
+    restart: unless-stopped
+    environment:
+      - ACCOUNT=${QQ_ACCOUNT:-}
+      - WS_ENABLE=true
+      - WS_PORT=3000
+    volumes:
+      - napcat_data:/app/napcat
+    ports:
+      - "3000:3000"  # WebSocket端口
+    networks:
+      - qq-vrc-bot-network
+    
+  # Redis缓存（可选）
+  redis:
+    image: redis:7-alpine
+    container_name: qq-vrc-bot-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - qq-vrc-bot-network
+    command: redis-server --appendonly yes
+
+networks:
+  qq-vrc-bot-network:
+    driver: bridge
+
+volumes:
+  napcat_data:
+  redis_data:
