@@ -299,13 +299,13 @@ class QQVRCBindingApp:
         except Exception as e:
             logger.exception(f"处理通知事件时发生错误: {e}")
     
-    async def authenticate_vrc(self):
+    async def authenticate_vrc(self, cli_mode):
         """认证VRChat API"""
         try:
             logger.info("开始VRChat API认证...")
             
             # 尝试认证
-            success = await self.vrc_api.authenticate()
+            success, message = await self.vrc_api.authenticate(cli_mode=cli_mode)
             
             if success:
                 logger.success("VRChat API认证成功！")
