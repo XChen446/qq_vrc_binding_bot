@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from loguru import logger
 
+from utils.message_template import DEFAULT_TEMPLATES
+
 
 class ConfigLoader:
     """配置加载器"""
