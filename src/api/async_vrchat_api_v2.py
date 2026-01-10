@@ -11,8 +11,10 @@ from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote
+from starlette.datastructures import URL
 
 import aiohttp
+from yarl import URL
 from loguru import logger
 import pyotp
 
@@ -129,13 +131,17 @@ class ImprovedAsyncVRChatAPIClient:
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
             }
-            
+            cookie_jar = aiohttp.CookieJar()
             # 如果已有Cookie，添加到请求头
             if self.auth_cookie:
-                headers['Cookie'] = f'auth={self.auth_cookie}'
+                cookie_jar.update_cookies(
+                    {'auth': self.auth_cookie},
+                    URL(self.BASE_URL)
+                )
             
             self.session = aiohttp.ClientSession(
                 connector=connector,
+                cookie_jar=cookie_jar,
                 headers=headers
             )
             

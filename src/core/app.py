@@ -26,7 +26,7 @@ from ..core.cli_handler import CLIHandler
 class QQVRCBindingApp:
     """QQ到VRChat双向绑定应用主类"""
     
-    def __init__(self, config_file: str = "config/config.yaml"):
+    def __init__(self, config_file: str = "data/config.yaml"):
         """
         初始化应用
         
@@ -299,13 +299,13 @@ class QQVRCBindingApp:
         except Exception as e:
             logger.exception(f"处理通知事件时发生错误: {e}")
     
-    async def authenticate_vrc(self, cli_mode):
+    async def authenticate_vrc(self):
         """认证VRChat API"""
         try:
             logger.info("开始VRChat API认证...")
             
             # 尝试认证
-            success, message = await self.vrc_api.authenticate(cli_mode=cli_mode)
+            success = await self.vrc_api.authenticate()
             
             if success:
                 logger.success("VRChat API认证成功！")

@@ -39,7 +39,7 @@ data/
 
 # 配置文件（运行时生成）
 .env
-config/config.yaml
+data/config.yaml
 
 # 系统文件
 .DS_Store

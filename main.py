@@ -34,7 +34,7 @@ async def main():
         
         # 使用默认配置文件
         if not config_file:
-            config_file = "config/config.yaml"
+            config_file = "data/config.yaml"
         
         # 创建应用实例
         app = QQVRCBindingApp(config_file=config_file)
