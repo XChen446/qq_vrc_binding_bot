@@ -87,7 +87,11 @@ class QQVRCBindingApp:
         """加载配置文件"""
         try:
             if not self.config_file.exists():
-                raise FileNotFoundError(f"配置文件不存在: {self.config_file}")
+                from ..utils.config_loader import ConfigLoader.ConfigLoader
+                config_loader = ConfigLoader(self.config_file)
+                template = config_loader.export_template()
+                ConfigLoader.save(template)
+                raise FileNotFoundError(f"配置文件不存在: {self.config_file}，已重新创建配置文件")
             
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 self.config = yaml.safe_load(f)
