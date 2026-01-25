@@ -25,7 +25,13 @@ class BotManager:
         self.vrc_config = VRCConfig(config_data)
         
         # 2. 初始化 API 客户端
-        self.ws_manager = QQWebSocketManager(self.qq_config.ws_url, self.qq_config.token)
+        self.ws_manager = QQWebSocketManager(
+            self.qq_config.ws_url,
+            self.qq_config.token,
+            max_retries=self.qq_config.ws_max_retries,
+            initial_delay=self.qq_config.ws_initial_delay,
+            max_delay=self.qq_config.ws_max_delay
+        )
         self.qq_client = QQClient(self.ws_manager)
         self.vrc_client = VRCApiClient(self.vrc_config)
         
@@ -63,4 +69,5 @@ class BotManager:
     async def stop(self):
         """停止机器人服务"""
         logger.info("正在停止服务...")
+        await self.ws_manager.disconnect()
         await self.vrc_client.close()

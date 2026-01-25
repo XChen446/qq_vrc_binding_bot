@@ -181,7 +181,10 @@ def main():
             },
             "napcat": {
                 "ws_url": "ws://127.0.0.1:3001",
-                "token": ""
+                "token": "",
+                "ws_max_retries": 10,
+                "ws_initial_delay": 5.0,
+                "ws_max_delay": 60.0
             },
             "vrchat": {
                 "username": "",
