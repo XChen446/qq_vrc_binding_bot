@@ -10,7 +10,7 @@ class QQWebSocketManager:
     def __init__(self, ws_url: str, token: str = "", max_retries: int = 10, initial_delay: float = 5.0, max_delay: float = 60.0):
         self.ws_url = ws_url
         self.token = token
-        self.ws: Optional[websockets.WebSocketClientProtocol] = None
+        self.ws: Any = None
         self.on_message_callback: Optional[Callable[[Dict[str, Any]], asyncio.Task]] = None
         self.max_retries = max_retries
         self.initial_delay = initial_delay
@@ -20,9 +20,8 @@ class QQWebSocketManager:
         self._auth_error = False
 
     async def connect(self):
-        headers = {}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        """建立 WebSocket 连接并保持"""
+        headers = self._get_headers()
         
         while not self._should_stop:
             if self._auth_error:
@@ -34,25 +33,38 @@ class QQWebSocketManager:
                 break
             
             try:
-                logger.info(f"正在连接到 NapCat: {self.ws_url} (重连: {self.retry_count}/{self.max_retries})")
-                async with websockets.connect(self.ws_url, additional_headers=headers) as ws:
-                    self.ws = ws
-                    self.retry_count = 0
-                    await self._listen()
+                await self._attempt_connect(headers)
             except Exception as e:
-                if self._auth_error:
-                    logger.error(f"认证错误，停止重连: {e}")
-                    break
-                
-                self.retry_count += 1
-                logger.error(f"WebSocket 连接断开或错误: {e}")
-                self.ws = None
-                
-                delay = min(self.initial_delay * (2 ** (self.retry_count - 1)), self.max_delay)
-                logger.info(f"{delay:.1f} 秒后重试...")
-                await asyncio.sleep(delay)
+                await self._handle_connection_error(e)
+
+    def _get_headers(self) -> Dict[str, str]:
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
+
+    async def _attempt_connect(self, headers: Dict[str, str]):
+        logger.info(f"正在连接到 NapCat: {self.ws_url} (重连: {self.retry_count}/{self.max_retries})")
+        async with websockets.connect(self.ws_url, additional_headers=headers) as ws:
+            self.ws = ws
+            self.retry_count = 0
+            await self._listen()
+
+    async def _handle_connection_error(self, e: Exception):
+        if self._auth_error:
+            logger.error(f"认证错误，停止重连: {e}")
+            return
+        
+        self.retry_count += 1
+        logger.error(f"WebSocket 连接断开或错误: {e}")
+        self.ws = None
+        
+        delay = min(self.initial_delay * (2 ** (self.retry_count - 1)), self.max_delay)
+        logger.info(f"{delay:.1f} 秒后重试...")
+        await asyncio.sleep(delay)
 
     async def disconnect(self):
+        """关闭连接"""
         self._should_stop = True
         if self.ws:
             try:
@@ -63,29 +75,43 @@ class QQWebSocketManager:
         self._auth_error = False
 
     async def _listen(self):
+        """监听 WebSocket 消息"""
         first_message = True
         async for message in self.ws:
             try:
                 data = json.loads(message)
-                retcode = data.get("retcode")
-                
-                if retcode == 1403:
-                    self._auth_error = True
-                    logger.error("Token 验证失败，请检查配置中的 token")
+                if self._check_auth_error(data):
                     raise Exception("Token 验证失败")
                 
                 if first_message:
                     logger.info("WebSocket 认证成功，开始监听消息")
                     first_message = False
                 
-                if self.on_message_callback:
-                    asyncio.create_task(self.on_message_callback(data))
+                await self._dispatch_message(data)
             except Exception as e:
-                logger.error(f"解析 WebSocket 消息失败: {e}")
-                raise
+                logger.error(f"处理 WebSocket 消息失败: {e}")
+                if self._auth_error:
+                    raise
+
+    def _check_auth_error(self, data: Dict[str, Any]) -> bool:
+        if data.get("retcode") == 1403:
+            self._auth_error = True
+            logger.error("Token 验证失败，请检查配置中的 token")
+            return True
+        return False
+
+    async def _dispatch_message(self, data: Dict[str, Any]):
+        if self.on_message_callback:
+            # 使用 create_task 避免阻塞接收循环
+            asyncio.create_task(self.on_message_callback(data))
 
     async def send(self, data: Dict[str, Any]):
-        if self.ws:
-            await self.ws.send(json.dumps(data))
-        else:
+        """发送数据到 WebSocket"""
+        if not self.ws:
             logger.error("WebSocket 未连接，发送失败")
+            return
+            
+        try:
+            await self.ws.send(json.dumps(data))
+        except Exception as e:
+            logger.error(f"发送 WebSocket 消息失败: {e}")
