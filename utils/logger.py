@@ -1,90 +1,216 @@
 import logging
 import os
 import sys
+import time
+import zipfile
+import glob
+from logging.handlers import TimedRotatingFileHandler
 from colorama import Fore, Style, init
 
 # 初始化 colorama
-init(autoreset=True, wrap=True)
+init(autoreset=True)
+
+class LogColors:
+    """定义日志颜色"""
+    DEBUG = Fore.CYAN
+    INFO = Fore.GREEN
+    WARNING = Fore.YELLOW
+    ERROR = Fore.RED
+    CRITICAL = Fore.RED + Style.BRIGHT
+    RESET = Style.RESET_ALL
 
 class ColoredFormatter(logging.Formatter):
-    """自定义日志格式化器，为不同级别添加颜色"""
-    COLORS = {
-        logging.DEBUG: Fore.CYAN,
-        logging.INFO: Fore.GREEN,
-        logging.WARNING: Fore.YELLOW,
-        logging.ERROR: Fore.RED,
-        logging.CRITICAL: Fore.RED + Style.BRIGHT,
-    }
-
+    """
+    自定义日志格式化器，带颜色支持
+    格式: Time - Name - Level - Message
+    """
     def format(self, record):
-        import copy
-        record_cp = copy.copy(record)
+        # 保存原始属性
+        original_levelname = record.levelname
+        original_msg = record.msg
+
+        # 获取颜色
+        color = getattr(LogColors, record.levelname, LogColors.INFO)
         
-        color = self.COLORS.get(record_cp.levelno, "")
-        if color:
-            record_cp.levelname = f"{color}{record_cp.levelname}{Style.RESET_ALL}"
-            if record_cp.levelno >= logging.WARNING:
-                record_cp.msg = f"{color}{record_cp.msg}{Style.RESET_ALL}"
+        # 格式化 LevelName
+        if record.levelno >= logging.WARNING:
+            # 警告及以上，整行或关键部分标色
+            record.levelname = f"{color}{record.levelname}{LogColors.RESET}"
+            record.msg = f"{color}{record.msg}{LogColors.RESET}"
+        else:
+            record.levelname = f"{color}{record.levelname}{LogColors.RESET}"
+
+        # 格式化输出
+        formatted = super().format(record)
+
+        # 还原属性 (防止污染其他 Handler)
+        record.levelname = original_levelname
+        record.msg = original_msg
         
-        return super().format(record_cp)
+        return formatted
 
-def setup_logger(log_level_str="INFO"):
-    """全局日志初始化"""
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
+def check_file_has_error(file_path: str) -> bool:
+    """检查文件是否包含 ERROR 或 CRITICAL 日志"""
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                if "ERROR" in line or "CRITICAL" in line:
+                    return True
+    except Exception:
+        pass
+    return False
+
+def archive_old_logs(log_dir: str, policy: dict = None):
+    """
+    启动时归档旧的日志文件
+    :param log_dir: 日志目录
+    :param policy: 归档策略 { "on_error": "archive"|"delete"|"keep", "on_success": ... }
+    """
+    if not os.path.exists(log_dir):
+        return
+
+    if policy is None:
+        policy = {"on_error": "archive", "on_success": "archive"}
+
+    # 1. 准备归档目录
+    archive_dir = os.path.join(log_dir, "archive")
+    os.makedirs(archive_dir, exist_ok=True)
+
+    # 2. 查找文件并决定动作
+    files_to_archive = []
+    files_to_delete = []
     
-    level_map = {
-        "DEBUG": logging.DEBUG,
-        "INFO": logging.INFO,
-        "WARNING": logging.WARNING,
-        "ERROR": logging.ERROR
-    }
-    log_level = level_map.get(log_level_str.upper(), logging.INFO)
-    
-    root = logging.getLogger()
-    if root.handlers:
-        for handler in root.handlers[:]:
-            root.removeHandler(handler)
+    # 获取所有日志文件
+    log_files = []
+    for filename in os.listdir(log_dir):
+        file_path = os.path.join(log_dir, filename)
+        if not os.path.isfile(file_path):
+            continue
+        if filename.endswith(".log") or ".log." in filename:
+            log_files.append(filename)
 
-    # 控制台处理器
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(ColoredFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    console_handler.setLevel(log_level)
+    if not log_files:
+        return
 
-    # 主日志文件
-    app_handler = logging.FileHandler(os.path.join(log_dir, "app.log"), mode='a', encoding='utf-8')
-    app_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    app_handler.setLevel(logging.DEBUG)
+    print(f"🔍 正在扫描旧日志 ({len(log_files)} 个文件)...")
 
-    # QQ API 日志
-    qq_handler = logging.FileHandler(os.path.join(log_dir, "qq_api.log"), mode='a', encoding='utf-8')
-    qq_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    qq_handler.setLevel(logging.DEBUG)
+    for filename in log_files:
+        file_path = os.path.join(log_dir, filename)
+        has_error = check_file_has_error(file_path)
+        
+        action = policy.get("on_error" if has_error else "on_success", "archive")
+        
+        if action == "archive":
+            files_to_archive.append(filename)
+        elif action == "delete":
+            files_to_delete.append(filename)
+        # elif action == "keep": do nothing
 
-    # VRC API 日志
-    vrc_handler = logging.FileHandler(os.path.join(log_dir, "vrc_api.log"), mode='a', encoding='utf-8')
-    vrc_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    vrc_handler.setLevel(logging.DEBUG)
+    # 3. 执行归档
+    if files_to_archive:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        zip_filename = f"logs_{timestamp}.zip"
+        zip_path = os.path.join(archive_dir, zip_filename)
 
-    # 访问日志
-    access_handler = logging.FileHandler(os.path.join(log_dir, "access.log"), mode='a', encoding='utf-8')
-    access_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    access_handler.setLevel(logging.INFO)
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for filename in files_to_archive:
+                    file_path = os.path.join(log_dir, filename)
+                    zipf.write(file_path, filename)
+            
+            print(f"📦 已归档 {len(files_to_archive)} 个日志文件到 {zip_filename}")
+            
+            # 归档后删除
+            for filename in files_to_archive:
+                try:
+                    os.remove(os.path.join(log_dir, filename))
+                except Exception as e:
+                    print(f"⚠️ 无法删除已归档文件 {filename}: {e}")
+                    
+        except Exception as e:
+            print(f"❌ 归档失败: {e}")
 
-    # 基础配置
-    logging.basicConfig(
-        level=logging.DEBUG,
-        handlers=[console_handler, app_handler],
-        force=True
+    # 4. 执行直接删除
+    if files_to_delete:
+        print(f"🗑️ 正在清理 {len(files_to_delete)} 个无用日志文件...")
+        for filename in files_to_delete:
+            try:
+                os.remove(os.path.join(log_dir, filename))
+            except Exception as e:
+                print(f"⚠️ 无法删除文件 {filename}: {e}")
+
+def setup_logger(log_level_str: str = "INFO", log_dir: str = "logs", retention_days: int = 30, archive_policy: dict = None):
+    # 0. 启动前归档旧日志
+    archive_old_logs(log_dir, archive_policy)
+
+    # 1. 基础配置
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+
+    log_level = getattr(logging, log_level_str.upper(), logging.INFO)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG) # Root 捕获所有，由 Handlers 过滤
+
+    # 清除旧 Handlers
+    root_logger.handlers.clear()
+
+    # 2. 定义格式化器
+    # 文件日志格式 (无颜色)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
-    
-    # 专用 Logger 配置
-    logging.getLogger("QQBot").addHandler(qq_handler)
-    logging.getLogger("VRChatAPI").addHandler(vrc_handler)
-    logging.getLogger("Access").addHandler(access_handler)
+    # 控制台日志格式 (带颜色)
+    console_formatter = ColoredFormatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
-    # 屏蔽第三方库 Debug 日志
+    # 3. 添加控制台 Handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+
+    # 4. 定义文件 Handler 辅助函数
+    def add_file_handler(logger_obj, filename: str, level: int = logging.DEBUG):
+        """为指定的 Logger 添加文件处理器"""
+        file_path = os.path.join(log_dir, filename)
+        handler = TimedRotatingFileHandler(
+            file_path,
+            when='midnight',
+            interval=1,
+            backupCount=retention_days, # 使用配置的保留天数
+            encoding='utf-8'
+        )
+        handler.setLevel(level)
+        handler.setFormatter(file_formatter)
+        logger_obj.addHandler(handler)
+
+    # 5. 配置各模块日志文件
+    
+    # app.log - 主日志文件
+    # 记录 INFO 及以上级别，作为一般的操作记录
+    add_file_handler(root_logger, "app.log", level=log_level)
+
+    # error.log - 错误日志
+    # 只记录 ERROR 及以上级别
+    add_file_handler(root_logger, "error.log", level=logging.ERROR)
+
+    # vrchat_api.log - VRChat API日志
+    # 对应 VRChatAPI Logger
+    vrc_logger = logging.getLogger("VRChatAPI")
+    add_file_handler(vrc_logger, "vrchat_api.log", level=logging.DEBUG)
+
+    # qq_bot.log - QQ Bot日志
+    # 对应 QQBot Logger (包括 QQBot.API 等子模块)
+    qq_logger = logging.getLogger("QQBot")
+    add_file_handler(qq_logger, "qq_bot.log", level=logging.DEBUG)
+
+    # 6. 调整第三方库日志
     logging.getLogger("websockets").setLevel(logging.INFO)
     logging.getLogger("aiohttp").setLevel(logging.INFO)
-    
-    logging.info(f"日志系统初始化完成，等级: {log_level_str}")
+    logging.getLogger("urllib3").setLevel(logging.INFO)
+    logging.getLogger("PIL").setLevel(logging.INFO)
+
+    logging.info(f"日志系统初始化完成 | Level: {log_level_str} | Dir: {log_dir}")
