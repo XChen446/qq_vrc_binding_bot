@@ -1,8 +1,14 @@
+"""
+机器人核心管理器 (BotManager)
+"""
+
 import logging
 import asyncio
-from config.global_config import GlobalConfig
-from config.qq_config import QQConfig
-from config.vrc_config import VRCConfig
+from typing import Dict, Any
+
+from core.global_config import GlobalConfig
+from core.qq_config import QQConfig
+from core.vrc_config import VRCConfig
 from api.qq.websocket import QQWebSocketManager
 from api.qq.client import QQClient
 from api.vrc.client import VRCApiClient
@@ -16,15 +22,28 @@ from core.database import get_database
 logger = logging.getLogger("BotManager")
 
 class BotManager:
-    def __init__(self, config_data):
+    def __init__(self, config_data: Dict[str, Any]):
         self.config_data = config_data
+        self._is_running = False
         
         # 1. 初始化配置
+        self._init_configs(config_data)
+        
+        # 2. 初始化核心组件 (API, DB, Handlers)
+        self._init_components()
+        
+        # 3. 绑定事件回调
+        self.ws_manager.on_message_callback = self.event_router.dispatch
+
+    def _init_configs(self, config_data: Dict[str, Any]):
+        """初始化配置对象"""
         self.global_config = GlobalConfig(config_data)
         self.qq_config = QQConfig(config_data)
         self.vrc_config = VRCConfig(config_data)
-        
-        # 2. 初始化 API 客户端
+
+    def _init_components(self):
+        """初始化各功能组件"""
+        # API 客户端
         self.ws_manager = QQWebSocketManager(
             self.qq_config.ws_url,
             self.qq_config.token,
@@ -35,39 +54,59 @@ class BotManager:
         self.qq_client = QQClient(self.ws_manager)
         self.vrc_client = VRCApiClient(self.vrc_config)
         
-        # 3. 初始化数据库
-        self.db = get_database(config_data)
+        # 数据库
+        self.db = get_database(self.config_data)
         
-        # 4. 初始化 Handler
+        # 业务处理器
         self.message_handler = MessageHandler(self)
         self.group_handler = GroupHandler(self)
         self.vrc_handler = WorldHandler(self)
         
-        # 5. 初始化核心组件
+        # 核心调度
         self.event_router = EventRouter(self)
         self.scheduler = Scheduler(self)
-        
-        # 绑定消息回调
-        self.ws_manager.on_message_callback = self.event_router.dispatch
 
     async def start(self):
         """启动机器人服务"""
+        if self._is_running:
+            logger.warning("Bot 已经在运行中")
+            return
+            
         logger.info("正在启动全异步机器人服务...")
+        self._is_running = True
         
-        # 验证 VRChat 登录
-        if not await self.vrc_client.auth.verify_auth():
-            logger.warning("VRChat 验证失败，尝试重新登录...")
-            if not await self.vrc_client.auth.login():
-                logger.error("VRChat 登录失败，请检查配置。")
-        
-        # 启动 WebSocket 和 Scheduler
-        await asyncio.gather(
-            self.ws_manager.connect(),
-            self.scheduler.start()
-        )
+        try:
+            # 1. 验证 VRChat 登录 (失败尝试重登)
+            await self._ensure_vrc_auth()
+            
+            # 2. 启动 WebSocket 和 Scheduler
+            await asyncio.gather(
+                self.ws_manager.connect(),
+                self.scheduler.start()
+            )
+        except Exception as e:
+            logger.critical(f"Bot 启动失败: {e}", exc_info=True)
+            await self.stop()
 
     async def stop(self):
         """停止机器人服务"""
         logger.info("正在停止服务...")
+        self._is_running = False
+        
+        # 优雅关闭各组件
+        await self.scheduler.stop()
         await self.ws_manager.disconnect()
         await self.vrc_client.close()
+        logger.info("服务已停止")
+
+    async def _ensure_vrc_auth(self):
+        """确保 VRChat 认证有效"""
+        logger.info("检查 VRChat 认证状态...")
+        if not await self.vrc_client.auth.verify_auth():
+            logger.warning("VRChat 验证失败，尝试重新登录...")
+            if not await self.vrc_client.auth.login():
+                logger.error("VRChat 登录失败，请检查配置。部分功能可能不可用。")
+            else:
+                logger.info("VRChat 重新登录成功")
+        else:
+            logger.info("VRChat 认证有效")
