@@ -8,6 +8,7 @@ from src.utils.verification import calculate_verification_elapsed, assign_vrc_ro
 from src.utils.code_generator import generate_verification_code
 from src.core.database.utils import safe_db_operation
 from src.utils.admin_utils import is_super_admin, is_group_admin_or_owner
+from src.handlers.qq_handler.command_handler import CommandHandler
 
 logger = logging.getLogger("QQBot.MessageHandler")
 
@@ -34,6 +35,7 @@ class MessageHandler:
         self.bot = bot
         self.config_path = config_path
         self._command_cooldowns: Dict[str, Dict[int, float]] = {}
+        self.command_handler = CommandHandler(bot)
         
         self._command_handlers: Dict[str, any] = {
             "help": self._cmd_help,
@@ -50,7 +52,8 @@ class MessageHandler:
             "admin": self._cmd_admin,
             "glbind": self._cmd_glbind,
             "unglbind": self._cmd_unglbind,
-            "unlist": self._cmd_unlist
+            "unlist": self._cmd_unlist,
+            "set": self._cmd_set
         }
 
     def _get_command_config(self, command: str) -> Dict[str, Any]:
@@ -169,7 +172,8 @@ class MessageHandler:
             "code": "重新获取验证码",
             "admin": "[@某人]-管理群管理员",
             "glbind": "[QQ] [VRC ID/名字]-全局绑定账号",
-            "unglbind": "[QQ]-全局解绑账号"
+            "unglbind": "[QQ]-全局解绑账号",
+            "set": "[设置项] [值] - 设置群组功能开关和参数(仅群管可用)"
         }
         
         for cmd, desc in commands_help.items():
@@ -182,7 +186,7 @@ class MessageHandler:
             if cmd == "unbound" and not is_admin:
                 continue
             
-            if cmd in ["admin", "glbind", "unglbind"] and not is_super_admin(user_id, self.bot.global_config.admin_qq):
+            if cmd in ["admin", "glbind", "unglbind", "set"] and not is_super_admin(user_id, self.bot.global_config.admin_qq):
                 continue
 
             if binding and cmd in ["verify", "code"]:
@@ -294,11 +298,23 @@ class MessageHandler:
             
             status_desc = vrc_user.get("statusDescription", "")
             if code in status_desc:
-                bind_result = await safe_db_operation(self.bot.db.bind_user, user_id, vrc_id, vrc_name, "verified", group_id)
+                # 首先检查用户是否已在全局验证表中
+                global_verification = await safe_db_operation(self.bot.db.get_global_verification, user_id)
+                if global_verification:
+                    # 用户已在全局验证表中，直接使用可信数据
+                    bind_result = await safe_db_operation(self.bot.db.bind_user, user_id, global_verification["vrc_user_id"], global_verification["vrc_display_name"], "verified", group_id)
+                else:
+                    # 用户不在全局验证表中，使用当前验证的数据
+                    bind_result = await safe_db_operation(self.bot.db.bind_user, user_id, vrc_id, vrc_name, "verified", group_id)
+                
                 delete_result = await safe_db_operation(self.bot.db.delete_verification, user_id)
                 
                 if not bind_result or not delete_result:
                     return "❌ 验证成功但保存数据失败，请联系管理员。"
+                
+                # 如果是首次验证，将其添加到全局验证表
+                if not global_verification:
+                    await safe_db_operation(self.bot.db.add_global_verification, user_id, vrc_id, vrc_name, "verified")
                 
                 reply = f"✅ 验证成功！已绑定 VRChat 账号: {vrc_name}"
                 
@@ -312,10 +328,12 @@ class MessageHandler:
                     if self.bot.vrc_config.verification.get("auto_assign_role"):
                         await assign_vrc_role(self.bot, vrc_id)
 
-                    if self.bot.global_config.enable_welcome:
-                        welcome_tpl = self.bot.global_config.templates.get("welcome", "")
-                        if welcome_tpl:
-                            reply += "\n" + welcome_tpl.format(display_name=vrc_name, user_id=user_id)
+                    # 获取群设置来决定是否发送欢迎消息
+                    enable_welcome = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
+                    if enable_welcome.lower() == "true":
+                        welcome_message = await safe_db_operation(self.bot.db.get_group_setting, group_id, "welcome_message", "欢迎！")
+                        welcome_tpl = welcome_message.format(display_name=vrc_name, user_id=user_id)
+                        reply += f"\n{welcome_tpl}"
                 
                 return reply
             else:
@@ -344,6 +362,8 @@ class MessageHandler:
 
     async def _cmd_unbind(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         group_id = context.get("group_id")
+        user_id = context.get("user_id")
+        
         if not group_id:
              return "❌ 该指令仅限在群聊中使用"
 
@@ -360,8 +380,19 @@ class MessageHandler:
         if not is_admin:
             return None
         
-        success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
-        return f"✅ 已从本群解绑 QQ: {target_qq}" if success else f"❌ 解绑失败，该用户可能未绑定或已解绑"
+        # 检查用户是否在全局验证表中
+        global_verification = await safe_db_operation(self.bot.db.get_global_verification, target_qq)
+        if global_verification:
+            # 如果在全局验证表中，群管只能解绑群组记录，不能影响全局验证
+            success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
+            if success:
+                return f"✅ 已从本群解绑 QQ: {target_qq}，但该用户仍在全局验证表中"
+            else:
+                return f"❌ 解绑失败，该用户可能未绑定或已解绑"
+        else:
+            # 如果不在全局验证表中，群管可以解绑群组记录
+            success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
+            return f"✅ 已从本群解绑 QQ: {target_qq}" if success else f"❌ 解绑失败，该用户可能未绑定或已解绑"
 
     async def _cmd_list(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         # 1. 检查是否在群聊中使用
@@ -402,8 +433,8 @@ class MessageHandler:
             if not group_id:
                 return "❌ 绑定群组指令仅限在群聊中使用"
                 
-            if not is_admin:
-                return None
+                if not is_admin:
+                    return None
                 
             vrc_group_id = args[0]
             
@@ -703,6 +734,9 @@ class MessageHandler:
             # 执行全局绑定 (group_id=None)
             success = await safe_db_operation(self.bot.db.bind_user, target_qq, vrc_id, vrc_name, "manual_global", None)
             
+            # 同时添加到全局验证表
+            await safe_db_operation(self.bot.db.add_global_verification, target_qq, vrc_id, vrc_name, "admin")
+            
             return f"✅ 已全局绑定 QQ {target_qq} 到 VRChat: {vrc_name}" if success else "❌ 数据库操作失败"
             
         except Exception as e:
@@ -724,6 +758,16 @@ class MessageHandler:
             return "❌ QQ号格式不正确"
             
         try:
+            # 首先从全局验证表中删除
+            global_verification = await safe_db_operation(self.bot.db.get_global_verification, target_qq)
+            if global_verification:
+                # 删除全局验证记录
+                # 由于没有直接删除全局验证记录的方法，我们直接从数据库删除
+                cursor = self.bot.db.conn.cursor()
+                cursor.execute("DELETE FROM global_verifications WHERE qq_id = ?", (target_qq,))
+                self.bot.db.conn.commit()
+            
+            # 然后执行全局解绑
             success = await safe_db_operation(self.bot.db.unbind_user_globally, target_qq)
             return f"✅ 已全局解绑 QQ: {target_qq}" if success else f"❌ 解绑失败"
         except Exception as e:
@@ -761,3 +805,19 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"解绑群组失败: {e}")
             return f"❌ 解绑失败: {e}"
+
+    async def _cmd_set(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
+        """处理!set命令，用于设置群组功能开关和参数"""
+        user_id = context.get("user_id")
+        group_id = context.get("group_id")
+        
+        # 检查是否在群聊中
+        if not group_id:
+            return "❌ 此命令仅可在群聊中使用"
+        
+        # 检查权限
+        if not is_admin:
+            return "❌ 仅群管理员或机器人超管可使用此命令"
+            
+        # 调用命令处理器处理设置命令
+        return await self.command_handler.handle_set_command(args, context)

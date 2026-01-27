@@ -9,9 +9,9 @@ from typing import Dict, Any
 from src.core.global_config import GlobalConfig
 from src.core.qq_config import QQConfig
 from src.core.vrc_config import VRCConfig
-from api.qq.websocket import QQWebSocketManager
-from api.qq.client import QQClient
-from api.vrc.client import VRCApiClient
+from src.api.qq.websocket import QQWebSocketManager
+from src.api.qq.client import QQClient
+from src.api.vrc.client import VRCApiClient
 from src.core.event_router import EventRouter
 from src.core.scheduler import Scheduler
 from src.core.database import get_database
