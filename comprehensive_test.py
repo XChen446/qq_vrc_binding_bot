@@ -9,7 +9,6 @@ import sys
 import os
 import time as time_module  # 避免变量名冲突
 import logging
-from typing import Dict, Any, List
 
 # 添加项目路径
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -44,10 +43,10 @@ async def test_imports():
             ("src.core.database.utils", "safe_db_operation"),
         ]),
         ("API Modules", [
-            ("api.qq.websocket", "QQWebSocketManager"),
-            ("api.qq.client", "QQClient"),
-            ("api.vrc.client", "VRCApiClient"),
-            ("api.vrc.auth", "VRCAuth"),
+            ("src.api.qq.websocket", "QQWebSocketManager"),
+            ("src.api.qq.client", "QQClient"),
+            ("src.api.vrc.client", "VRCApiClient"),
+            ("src.api.vrc.auth", "VRCAuth"),
         ]),
         ("Handler Modules", [
             ("src.handlers.qq_handler.message_handler", "MessageHandler"),
@@ -192,8 +191,8 @@ async def test_vrc_api():
     print("=" * 60)
     
     try:
-        from api.vrc.client import VRCApiClient
-        from api.vrc.auth import VRCAuth
+        from src.api.vrc.client import VRCApiClient
+        from src.api.vrc.auth import VRCAuth
         from src.core.global_config import load_all_config
         from vrchatapi.configuration import Configuration
         
