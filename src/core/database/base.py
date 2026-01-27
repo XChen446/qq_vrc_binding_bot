@@ -168,3 +168,73 @@ class BaseDatabase(ABC):
         :return: 是否成功
         """
         pass
+
+    @abstractmethod
+    def set_group_setting(self, group_id: int, setting_name: str, setting_value: str) -> bool:
+        """
+        设置群组特定配置
+        :param group_id: 群号
+        :param setting_name: 设置名称
+        :param setting_value: 设置值
+        :return: 是否成功
+        """
+        pass
+
+    @abstractmethod
+    def get_group_setting(self, group_id: int, setting_name: str) -> Optional[str]:
+        """
+        获取群组特定配置
+        :param group_id: 群号
+        :param setting_name: 设置名称
+        :return: 设置值，若不存在则返回None
+        """
+        pass
+
+    @abstractmethod
+    def add_global_verification(self, qq_id: int, vrc_user_id: str, vrc_display_name: str, verified_by: str = "system") -> bool:
+        """
+        添加全局验证记录（用户已完成验证）
+        :param qq_id: QQ号
+        :param vrc_user_id: VRChat ID
+        :param vrc_display_name: VRChat 显示名称
+        :param verified_by: 验证来源
+        :return: 是否成功
+        """
+        pass
+
+    @abstractmethod
+    def get_global_verification(self, qq_id: int) -> Optional[Dict]:
+        """
+        获取全局验证记录
+        :param qq_id: QQ号
+        :return: 验证记录字典
+        """
+        pass
+
+    @abstractmethod
+    def get_group_binding_with_global_fallback(self, group_id: int, qq_id: int) -> Optional[Dict]:
+        """
+        获取群组绑定记录，如果群组中没有则从全局验证获取
+        :param group_id: 群号
+        :param qq_id: QQ号
+        :return: 绑定记录字典
+        """
+        pass
+
+    @abstractmethod
+    def search_bindings(self, query: str) -> List[Dict]:
+        """
+        搜索绑定记录（全局）
+        :param query: 搜索关键词
+        :return: 匹配的绑定记录列表
+        """
+        pass
+
+    @abstractmethod
+    def get_pending_vrc_info(self, user_id: int) -> Optional[Dict]:
+        """
+        获取用户待处理的VRChat信息
+        :param user_id: QQ用户ID
+        :return: VRChat信息字典
+        """
+        pass

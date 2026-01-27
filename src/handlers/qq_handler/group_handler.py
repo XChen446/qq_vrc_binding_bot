@@ -4,6 +4,7 @@ import asyncio
 from typing import Dict, Any, Optional, Tuple
 from src.utils import assign_vrc_role
 from src.utils import generate_verification_code
+from src.core.database.utils import safe_db_operation
 
 logger = logging.getLogger("QQBot.GroupHandler")
 
@@ -34,7 +35,7 @@ class GroupHandler:
         user_id = data.get("user_id")
         
         logger.info(f"成员 {user_id} 退出群 {group_id}，正在清理绑定记录...")
-        success = await asyncio.to_thread(self.bot.db.unbind_user_from_group, group_id, user_id)
+        success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, user_id)
         if success:
             logger.info(f"已清理成员 {user_id} 在群 {group_id} 的绑定记录")
         else:
@@ -49,18 +50,26 @@ class GroupHandler:
         sub_type = data.get("sub_type", "add")
 
         # 0. 预检查
-        if not self.bot.global_config.features.get("auto_approve_group_request", False):
+        auto_approve_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "auto_approve_group_request", "False")
+        if auto_approve_setting.lower() != "true":
             return
 
         if flag in self._handled_flags:
             return
         self._handled_flags.add(flag)
 
-        # 1. 尝试自动重连 (已有绑定记录)
+        # 1. 检查是否已在全局验证表中 (全局验证过的用户可以直接通过)
+        global_verification = await safe_db_operation(self.bot.db.get_global_verification, user_id)
+        if global_verification:
+            logger.info(f"用户 {user_id} 已在全局验证表中，自动同意入群申请")
+            await self.bot.qq_client.approve_request(flag, sub_type)
+            return
+
+        # 2. 尝试自动重连 (已有绑定记录)
         if await self._try_auto_reconnect(user_id, flag, sub_type):
             return
 
-        # 2. 身份识别 (解析附言)
+        # 3. 身份识别 (解析附言)
         vrc_user = await self._parse_vrc_user_from_comment(comment)
         if not vrc_user:
             logger.warning(f"无法识别附言中的 VRChat 账号: {comment}")
@@ -69,13 +78,13 @@ class GroupHandler:
                 await self.bot.qq_client.reject_request(flag, sub_type, reason)
             return
 
-        # 3. 安全与策略检查
+        # 4. 安全与策略检查
         check_passed, reject_reason = await self._check_security_policies(vrc_user, user_id)
         if not check_passed:
             await self.bot.qq_client.reject_request(flag, sub_type, reject_reason)
             return
 
-        # 4. 验证通过，放行并缓存
+        # 5. 验证通过，放行并缓存
         self._pending_bindings[user_id] = {
             "id": vrc_user["id"],
             "name": vrc_user["displayName"],
@@ -89,10 +98,10 @@ class GroupHandler:
         group_id = data.get("group_id")
         user_id = data.get("user_id")
 
-        # 1. 优先检查全局绑定 (自动入群验证)
-        global_bind = await self._get_global_binding_info(user_id)
-        if global_bind:
-            await self._handle_auto_verify_success(group_id, user_id, global_bind['vrc_id'], global_bind['vrc_name'])
+        # 1. 优先检查全局验证 (自动入群验证)
+        global_verification = await safe_db_operation(self.bot.db.get_global_verification, user_id)
+        if global_verification:
+            await self._handle_auto_verify_success(group_id, user_id, global_verification['vrc_user_id'], global_verification['vrc_display_name'])
             return
 
         # 2. 检查是否有待处理的申请记录 (从 _process_group_add 传递过来)
@@ -103,14 +112,15 @@ class GroupHandler:
             return
 
         # 3. 无任何信息，发送绑定提醒
-        if self.bot.global_config.enable_welcome:
+        enable_welcome_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
+        if enable_welcome_setting.lower() == "true":
             reminder = self.bot.global_config.templates.get("reminder_not_bound", "欢迎！请绑定 VRChat 账号。")
             await self.bot.qq_client.send_group_msg(group_id, f"[CQ:at,qq={user_id}] {reminder}")
 
 
     async def _try_auto_reconnect(self, user_id: int, flag: str, sub_type: str) -> bool:
         """尝试基于已有绑定记录自动放行"""
-        binding = await asyncio.to_thread(self.bot.db.get_binding, user_id)
+        binding = await safe_db_operation(self.bot.db.get_binding, user_id)
         if binding:
             bound_vrc_id = binding['vrc_user_id']
             try:
@@ -142,7 +152,7 @@ class GroupHandler:
 
     async def _check_bind_conflict(self, vrc_id: str, user_id: int) -> Optional[int]:
         """检查 VRChat 账号是否已被其他 QQ 绑定，返回冲突的 QQ 号"""
-        existing_qq = await asyncio.to_thread(self.bot.db.get_qq_by_vrc_id, vrc_id)
+        existing_qq = await safe_db_operation(self.bot.db.get_qq_by_vrc_id, vrc_id)
         if existing_qq and int(existing_qq) != int(user_id):
             return int(existing_qq)
         return None
@@ -180,7 +190,7 @@ class GroupHandler:
 
     async def _get_global_binding_info(self, user_id: int) -> Optional[Dict[str, Any]]:
         """获取用户的全局绑定信息"""
-        binding = await asyncio.to_thread(self.bot.db.get_binding, user_id)
+        binding = await safe_db_operation(self.bot.db.get_binding, user_id)
         if not binding:
             return None
             
@@ -203,26 +213,26 @@ class GroupHandler:
         return None
 
     async def _handle_auto_verify_success(self, group_id: int, user_id: int, vrc_id: str, vrc_name: str):
-        """处理自动验证成功逻辑 (全局绑定用户)"""
-        logger.info(f"用户 {user_id} 存在全局绑定 {vrc_name}，自动通过验证")
+        """处理自动验证成功逻辑 (全局验证用户)"""
+        logger.info(f"用户 {user_id} 存在全局验证记录 {vrc_name}，自动通过验证")
         
-        # 1. 写入群组绑定记录
-        await asyncio.to_thread(self.bot.db.bind_user, user_id, vrc_id, vrc_name, "auto", group_id)
+        # 1. 写入群组绑定记录 (从全局验证信息复制)
+        await safe_db_operation(self.bot.db.bind_user, user_id, vrc_id, vrc_name, "auto", group_id)
         
         # 2. 自动修改名片
-        if self.bot.vrc_config.verification.get("auto_rename", True):
+        auto_rename_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "auto_bind_on_join", "True")
+        if auto_rename_setting.lower() == "true":
             try:
                 await self.bot.qq_client.set_group_card(group_id, user_id, vrc_name)
             except Exception as e:
                 logger.warning(f"自动修改名片失败: {e}")
         
         # 3. 发送欢迎消息
-        welcome_tpl = (
-            "[CQ:at,qq={user_id}] 欢迎回来！\n"
-            "已检测到您的全局绑定记录，自动完成身份验证。\n"
-            "当前绑定账号: {vrc_name}"
-        )
-        await self.bot.qq_client.send_group_msg(group_id, welcome_tpl.format(user_id=user_id, vrc_name=vrc_name))
+        enable_welcome_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
+        if enable_welcome_setting.lower() == "true":
+            welcome_message = await safe_db_operation(self.bot.db.get_group_setting, group_id, "welcome_message", "欢迎回来！")
+            welcome_msg = welcome_message.format(user_id=user_id, vrc_name=vrc_name)
+            await self.bot.qq_client.send_group_msg(group_id, f"[CQ:at,qq={user_id}] {welcome_msg}")
         
         # 4. 尝试分配角色
         await assign_vrc_role(self.bot, vrc_id)
@@ -233,7 +243,7 @@ class GroupHandler:
         code = generate_verification_code()
         
         # 保存验证记录
-        await asyncio.to_thread(self.bot.db.add_verification, user_id, vrc_id, vrc_name, code)
+        await safe_db_operation(self.bot.db.add_verification, user_id, vrc_id, vrc_name, code)
         
         # 发送验证提示
         default_tpl = (
@@ -273,6 +283,11 @@ class GroupHandler:
         vrc_id = user["id"]
         vrc_name = user["displayName"]
         
+        # 检查全局验证表 (如果用户已在全局验证表中，不允许群管修改绑定)
+        global_verification = await safe_db_operation(self.bot.db.get_global_verification, target_qq)
+        if global_verification and global_verification['vrc_user_id'] != vrc_id:
+            return None, f"❌ 绑定失败：该用户已在全局验证表中绑定 VRC 账号 {global_verification['vrc_display_name']}，如需修改请联系机器人超管！"
+        
         conflict_qq = await self._check_bind_conflict(vrc_id, target_qq)
         if conflict_qq:
             return None, f"❌ 绑定失败：VRC 账号 {vrc_name} 已被 QQ {conflict_qq} 绑定"
@@ -289,13 +304,13 @@ class GroupHandler:
             
         # 检查本群现有绑定
         if group_id:
-             existing_binding = await asyncio.to_thread(self.bot.db.get_group_member_binding, group_id, qq_id)
+             existing_binding = await safe_db_operation(self.bot.db.get_group_member_binding, group_id, qq_id)
              if existing_binding:
                  old_vrc_name = existing_binding.get('vrc_display_name', '未知用户')
                  return f"❌ QQ {qq_id} 在本群已绑定 {old_vrc_name}，如需修改请先解绑"
 
         # 检查全局绑定 (防止冲突)
-        global_binding = await asyncio.to_thread(self.bot.db.get_binding, qq_id)
+        global_binding = await safe_db_operation(self.bot.db.get_binding, qq_id)
         if global_binding:
             # 如果全局绑定来源不是当前群，或者是 manual 类型且没有 origin_group_id (纯全局绑定)
             # 或者有 origin_group_id 但不是当前群
@@ -305,9 +320,25 @@ class GroupHandler:
                 g_vrc_id = global_binding.get('vrc_user_id', '未知')
                 return f"❌ 登记无效！该用户已全局绑定了VRC账号 {g_vrc_name} ({g_vrc_id})！请联系机器人管理员！"
 
-        success = await asyncio.to_thread(self.bot.db.bind_user, qq_id, vrc_id, vrc_name, "manual", group_id)
+        success = await safe_db_operation(self.bot.db.bind_user, qq_id, vrc_id, vrc_name, "manual", group_id)
         
         if success:
              return f"✅ 已成功将 QQ {qq_id} 绑定到 VRChat: {vrc_name}"
         else:
             return "❌ 数据库错误"
+
+    async def manual_global_bind(self, qq_id: int, vrc_id: str, vrc_name: str) -> str:
+        """手动全局绑定处理 (由超管执行)"""
+        # 首先尝试将用户添加到全局验证表
+        success = await safe_db_operation(self.bot.db.add_global_verification, qq_id, vrc_id, vrc_name, "admin")
+        if not success:
+            return "❌ 全局验证记录添加失败"
+        
+        # 同时在全局绑定表中也记录
+        success = await safe_db_operation(self.bot.db.bind_user, qq_id, vrc_id, vrc_name, "manual_global", None)
+        if not success:
+            return "❌ 全局绑定记录添加失败"
+        
+        # 为所有已加入的群聊同步绑定记录
+        # 这里简单地更新群组表，如果有群组表的话
+        return f"✅ 已成功将 QQ {qq_id} 全局绑定到 VRChat: {vrc_name}"

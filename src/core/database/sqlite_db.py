@@ -43,6 +43,17 @@ class SQLiteDatabase(BaseDatabase):
                 except Exception as e:
                     print(f"数据迁移失败: {e}")
 
+        # 全局验证表（已验证用户，无法通过群管操作删除）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS global_verifications (
+                qq_id INTEGER PRIMARY KEY,
+                vrc_user_id TEXT NOT NULL,
+                vrc_display_name TEXT NOT NULL,
+                verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                verified_by TEXT DEFAULT 'system'
+            )
+        ''')
+        
         # 验证表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS verifications (
@@ -62,6 +73,16 @@ class SQLiteDatabase(BaseDatabase):
             # 列已存在，忽略错误
             pass
             
+        # 群组配置表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS group_settings (
+                group_id INTEGER,
+                setting_name TEXT,
+                setting_value TEXT,
+                PRIMARY KEY (group_id, setting_name)
+            )
+        ''')
+        
         self.conn.commit()
 
     def _ensure_group_table(self, group_id: int):
@@ -378,3 +399,117 @@ class SQLiteDatabase(BaseDatabase):
             "bind_type": r[4],
             "origin_group_id": r[5]
         } for r in rows]
+
+    def set_group_setting(self, group_id: int, setting_name: str, setting_value: str) -> bool:
+        """设置群组特定配置"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO group_settings (group_id, setting_name, setting_value) VALUES (?, ?, ?)",
+                (group_id, setting_name, setting_value)
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"SQLite 设置群组配置失败: {e}")
+            return False
+
+    def get_group_setting(self, group_id: int, setting_name: str) -> Optional[str]:
+        """获取群组特定配置"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT setting_value FROM group_settings WHERE group_id = ? AND setting_name = ?",
+                (group_id, setting_name)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"SQLite 获取群组配置失败: {e}")
+            return None
+
+    def add_global_verification(self, qq_id: int, vrc_user_id: str, vrc_display_name: str, verified_by: str = "system") -> bool:
+        """添加全局验证记录（用户已完成验证）"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO global_verifications (qq_id, vrc_user_id, vrc_display_name, verified_by) VALUES (?, ?, ?, ?)",
+                (qq_id, vrc_user_id, vrc_display_name, verified_by)
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"SQLite 添加全局验证记录失败: {e}")
+            return False
+
+    def get_global_verification(self, qq_id: int) -> Optional[Dict]:
+        """获取全局验证记录"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT qq_id, vrc_user_id, vrc_display_name, verified_at, verified_by FROM global_verifications WHERE qq_id = ?",
+                (qq_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "qq_id": row[0],
+                    "vrc_user_id": row[1],
+                    "vrc_display_name": row[2],
+                    "verified_at": row[3],
+                    "verified_by": row[4]
+                }
+            return None
+        except Exception as e:
+            print(f"SQLite 获取全局验证记录失败: {e}")
+            return None
+
+    def get_group_binding_with_global_fallback(self, group_id: int, qq_id: int) -> Optional[Dict]:
+        """获取群组绑定记录，如果群组中没有则从全局验证获取"""
+        # 首先尝试从群组表获取
+        group_binding = self.get_group_member_binding(group_id, qq_id)
+        if group_binding:
+            return group_binding
+        
+        # 如果群组中没有，则尝试从全局验证表获取
+        global_verification = self.get_global_verification(qq_id)
+        if global_verification:
+            return {
+                "qq_id": global_verification["qq_id"],
+                "vrc_user_id": global_verification["vrc_user_id"],
+                "vrc_display_name": global_verification["vrc_display_name"],
+                "bind_time": global_verification["verified_at"]
+            }
+        
+        # 最后尝试从全局绑定表获取
+        return self.get_binding(qq_id)
+
+    def _ensure_connection(self):
+        """确保数据库连接正常"""
+        if not self.conn:
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+
+    def search_bindings(self, query: str) -> List[Dict]:
+        """搜索绑定记录（全局）"""
+        return self.search_global_bindings(query)
+
+    def get_pending_vrc_info(self, user_id: int) -> Optional[Dict]:
+        """获取用户待处理的VRChat信息"""
+        # 这个信息通常存储在内存中，而不是数据库中
+        # 但我们可以从验证表中获取相关信息
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT vrc_user_id, vrc_display_name FROM verifications WHERE qq_id = ? AND is_expired = 0",
+                (user_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "vrc_user_id": row[0],
+                    "vrc_display_name": row[1]
+                }
+            return None
+        except Exception as e:
+            print(f"SQLite 获取待处理VRChat信息失败: {e}")
+            return None
