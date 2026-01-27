@@ -1,8 +1,9 @@
 import os
 import time
 import logging
+import asyncio
 from typing import Optional, List, Dict, Any
-from utils.image_generator import generate_instance_image
+from src.utils.image_generator import generate_instance_image
 
 logger = logging.getLogger("VRChatAPI.WorldHandler")
 
@@ -36,7 +37,7 @@ class WorldHandler:
     def _get_vrc_group_id(self) -> Optional[str]:
         return self.bot.vrc_config.verification.get("group_id")
 
-    async def _generate_and_send_image(self, group_id: int, instances: List[Dict[str, Any]]) -> None:
+    async def _generate_and_send_image(self, group_id: int, instances: List[Dict[str, Any]]) -> str:
         # 按人数排序
         instances.sort(key=self._get_user_count, reverse=True)
 
@@ -46,7 +47,7 @@ class WorldHandler:
         
         proxy = self.bot.vrc_config.proxy
         # 在线程池中生成图片
-        await self.bot.loop.run_in_executor(
+        await asyncio.get_event_loop().run_in_executor(
             None, 
             generate_instance_image, 
             instances, 
@@ -54,8 +55,9 @@ class WorldHandler:
             proxy
         )
 
-        image_msg = f"[CQ:image,file=file:///{abs_output_path.replace('\\', '/')}]"
+        image_msg = f"[CQ:image,file=file=file:///{abs_output_path.replace(chr(92), chr(47))}]"
         await self.bot.qq_client.send_group_msg(group_id, image_msg)
+        return image_msg
 
     @staticmethod
     def _get_user_count(inst: Dict[str, Any]) -> int:

@@ -3,11 +3,11 @@ import logging
 import asyncio
 import os
 from typing import Dict, Any, List, Optional, Tuple
-from utils.image_generator import generate_binding_list_image
-from utils.verification import calculate_verification_elapsed, assign_vrc_role
-from utils.code_generator import generate_verification_code
-from core.database.utils import safe_db_operation
-from utils.admin_utils import is_super_admin
+from src.utils.image_generator import generate_binding_list_image
+from src.utils.verification import calculate_verification_elapsed, assign_vrc_role
+from src.utils.code_generator import generate_verification_code
+from src.core.database.utils import safe_db_operation
+from src.utils.admin_utils import is_super_admin
 
 logger = logging.getLogger("QQBot.MessageHandler")
 
@@ -401,7 +401,7 @@ class MessageHandler:
                 data = await self._fetch_qq_names(bindings)
                 
                 # 生成图片
-                from utils.image_generator import generate_list_image
+                from src.utils import generate_list_image
                 temp_dir = "data/temp"
                 os.makedirs(temp_dir, exist_ok=True)
                 filename = f"list_global_{int(time.time())}.png"
@@ -458,7 +458,7 @@ class MessageHandler:
             data = await self._fetch_qq_names(bindings, group_id)
             
             # 生成图片
-            from utils.image_generator import generate_list_image
+            from src.utils import generate_list_image
             temp_dir = "data/temp"
             os.makedirs(temp_dir, exist_ok=True)
             filename = f"list_{group_id}_{int(time.time())}.png"
@@ -627,7 +627,7 @@ class MessageHandler:
                 avatar_url = vrc_user.get("currentAvatarImageUrl") or vrc_user.get("userIcon") or vrc_user.get("profilePicOverride")
                 
                 # 生成图片
-                from utils.image_generator import generate_user_info_image
+                from src.utils import generate_user_info_image
                 temp_dir = "data/temp"
                 os.makedirs(temp_dir, exist_ok=True)
                 filename = f"me_{user_id}_{int(time.time())}.png"

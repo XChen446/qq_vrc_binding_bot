@@ -8,9 +8,9 @@ import json
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
 
-from utils.logger import setup_logger
-from core.global_config import load_all_config
-from core.bot_manager import BotManager
+from src.utils.logger import setup_logger
+from src.core.global_config import load_all_config
+from src.core.bot_manager import BotManager
 
 async def async_main():
     """

@@ -6,18 +6,15 @@ import logging
 import asyncio
 from typing import Dict, Any
 
-from core.global_config import GlobalConfig
-from core.qq_config import QQConfig
-from core.vrc_config import VRCConfig
+from src.core.global_config import GlobalConfig
+from src.core.qq_config import QQConfig
+from src.core.vrc_config import VRCConfig
 from api.qq.websocket import QQWebSocketManager
 from api.qq.client import QQClient
 from api.vrc.client import VRCApiClient
-from handlers.qq_handler.message_handler import MessageHandler
-from handlers.qq_handler.group_handler import GroupHandler
-from handlers.vrc_handler.world_handler import WorldHandler
-from core.event_router import EventRouter
-from core.scheduler import Scheduler
-from core.database import get_database
+from src.core.event_router import EventRouter
+from src.core.scheduler import Scheduler
+from src.core.database import get_database
 
 logger = logging.getLogger("BotManager")
 
@@ -30,10 +27,13 @@ class BotManager:
         # 1. 初始化配置
         self._init_configs(config_data)
         
-        # 2. 初始化核心组件 (API, DB, Handlers)
+        # 2. 初始化核心组件 (API, DB)
         self._init_components()
         
-        # 3. 绑定事件回调
+        # 3. 延迟初始化处理器，避免循环导入
+        self._init_handlers()
+        
+        # 4. 绑定事件回调
         self.ws_manager.on_message_callback = self.event_router.dispatch
 
     def _init_configs(self, config_data: Dict[str, Any]):
@@ -58,14 +58,19 @@ class BotManager:
         # 数据库
         self.db = get_database(self.config_data)
         
-        # 业务处理器
-        self.message_handler = MessageHandler(self, config_path=self.config_path)
-        self.group_handler = GroupHandler(self)
-        self.vrc_handler = WorldHandler(self)
-        
         # 核心调度
         self.event_router = EventRouter(self)
         self.scheduler = Scheduler(self)
+
+    def _init_handlers(self):
+        """延迟初始化处理器，避免循环导入"""
+        from src.handlers.qq_handler.message_handler import MessageHandler
+        from src.handlers.qq_handler.group_handler import GroupHandler
+        from src.handlers.vrc_handler.world_handler import WorldHandler
+        
+        self.message_handler = MessageHandler(self, config_path=self.config_path)
+        self.group_handler = GroupHandler(self)
+        self.vrc_handler = WorldHandler(self)
 
     async def start(self):
         """启动机器人服务"""

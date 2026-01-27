@@ -2,8 +2,8 @@ import time
 import logging
 import asyncio
 from typing import Dict, Any, Optional, Tuple
-from utils.verification import assign_vrc_role
-from utils.code_generator import generate_verification_code
+from src.utils import assign_vrc_role
+from src.utils import generate_verification_code
 
 logger = logging.getLogger("QQBot.GroupHandler")
 

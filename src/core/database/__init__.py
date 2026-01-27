@@ -1,5 +1,9 @@
 from .base import BaseDatabase
 from .sqlite_db import SQLiteDatabase
+from .utils import safe_db_operation
+
+__all__ = ['safe_db_operation', 'get_database']
+
 
 def get_database(config: dict) -> BaseDatabase:
     db_config = config.get("database", {})
