@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Callable, Coroutine
+from typing import Dict, Any
 
 logger = logging.getLogger("QQBot.EventRouter")
 
@@ -8,7 +8,6 @@ async def _handle_meta_event(data: Dict[str, Any]):
     """处理元事件 (如心跳)"""
     meta_type = data.get("meta_event_type")
     if meta_type == "heartbeat":
-        # 可以在这里更新最后心跳时间等
         pass
     elif meta_type == "lifecycle":
         sub_type = data.get("sub_type")
@@ -19,7 +18,7 @@ class EventRouter:
     def __init__(self, bot):
         self.bot = bot
         # 注册事件处理映射
-        self._handlers: Dict[str, Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]] = {
+        self._handlers: Dict[str, any] = {
             "message": self._handle_message,
             "request": self._handle_request,
             "notice": self._handle_notice,
@@ -40,7 +39,6 @@ class EventRouter:
                 if "meta_event_type" in data:
                     post_type = "meta_event"
                 else:
-                    # logger.debug(f"收到未知类型数据: {data}")
                     return
 
             # 3. 分发处理

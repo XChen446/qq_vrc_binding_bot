@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import List, Callable, Coroutine
+from typing import List
 
 logger = logging.getLogger("QQBot.Scheduler")
 
@@ -9,9 +9,9 @@ class Scheduler:
         self.bot = bot
         self._running = False
         self._tasks: List[asyncio.Task] = []
-        self._cleanup_jobs: List[Callable[[], Coroutine]] = []
+        self._cleanup_jobs: List[any] = []
 
-    def register_cleanup_job(self, job: Callable[[], Coroutine]):
+    def register_cleanup_job(self, job):
         """注册定时清理任务"""
         self._cleanup_jobs.append(job)
 
@@ -22,6 +22,7 @@ class Scheduler:
         
         self._tasks.append(asyncio.create_task(self.monitor_connection()))
         self._tasks.append(asyncio.create_task(self.cleanup_task()))
+        self._tasks.append(asyncio.create_task(self.verification_expiry_task()))
         
         try:
             await asyncio.gather(*self._tasks)
@@ -67,15 +68,34 @@ class Scheduler:
                     continue
 
                 # 发送心跳
-                # logger.debug("发送 WebSocket 心跳 ping")
                 pong_waiter = await ws_manager.ws.ping()
                 await asyncio.wait_for(pong_waiter, timeout=10)
-                # logger.debug("收到 WebSocket 心跳 pong")
                 
             except asyncio.TimeoutError:
                 logger.warning("WebSocket 心跳超时，连接可能已断开")
             except Exception as e:
                 logger.error(f"心跳检测异常: {e}")
+
+    async def verification_expiry_task(self):
+        """定期检查并标记过期验证码"""
+        logger.info("启动验证码过期检查任务")
+        while self._running:
+            try:
+                # 获取配置的过期时间
+                expiry = 300
+                if self.bot and self.bot.vrc_config:
+                    expiry = self.bot.vrc_config.verification.get("code_expiry", 300)
+                
+                # 执行清理
+                if self.bot and self.bot.db:
+                    count = await asyncio.to_thread(self.bot.db.expire_outdated_verifications, expiry)
+                    if count > 0:
+                        logger.info(f"已自动标记 {count} 个过期验证记录")
+            except Exception as e:
+                logger.error(f"验证码过期检查任务出错: {e}")
+            
+            # 每10秒检查一次
+            await asyncio.sleep(10)
 
     async def cleanup_task(self):
         """定期清理任务"""
@@ -92,6 +112,4 @@ class Scheduler:
                 except Exception as e:
                     logger.error(f"清理任务执行出错: {e}")
             
-            # 默认清理逻辑 (如果有)
-            # 例如: 清理临时文件
             pass

@@ -5,3 +5,4 @@ websockets>=12.0
 pymysql>=1.1.0
 aiohttp>=3.9.0
 pillow>=12.1.0
+dynaconf>=3.2.12

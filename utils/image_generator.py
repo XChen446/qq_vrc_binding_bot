@@ -267,7 +267,7 @@ def generate_binding_list_image(bindings: List[Dict[str, Any]], output_path: str
     image.save(output_path)
     return output_path
 
-def generate_user_info_image(qq_id: int, qq_name: str, vrc_name: str, vrc_id: str, bio: str, output_path: str, avatar_url: Optional[str] = None, proxy: Optional[str] = None, status: Optional[str] = None) -> str:
+def generate_user_info_image(qq_id: int, qq_name: str, vrc_name: str, vrc_id: str, bio: str, output_path: str, avatar_url: Optional[str] = None, proxy: Optional[str] = None, status: Optional[str] = None, status_desc: Optional[str] = None, bind_time: Optional[str] = None, origin_group: Optional[str] = None) -> str:
     """生成用户信息图片"""
     width = 600
     padding = 20
@@ -276,11 +276,26 @@ def generate_user_info_image(qq_id: int, qq_name: str, vrc_name: str, vrc_id: st
     font_bio = load_font(16)
     bio_lines = wrap_text(bio, width - padding * 2, font_bio)
     
-    # 动态计算高度: 基础高度 + 简介高度 + (如果有状态则增加的高度)
-    base_height = 80 + 140 + 60 + 30 + padding * 2
-    if status:
-        base_height += 35
-    height = base_height + len(bio_lines) * 25
+    info_rows = [
+        row for row in [
+            ("QQ 昵称:", qq_name),
+            ("QQ 号码:", str(qq_id)),
+            ("在线状态:", status) if status else None,
+            ("状态描述:", status_desc) if status_desc else None,
+            ("绑定时间:", str(bind_time)) if bind_time else None,
+            ("来源群组:", str(origin_group)) if origin_group else None
+        ]
+        if row is not None
+    ]
+    
+    # 动态计算高度  
+    info_start_y = 90 + 80 + 25
+    info_height = len(info_rows) * 35
+    separator_gap = 15
+    bio_title_gap = 15
+    bio_text_gap = 50
+    
+    height = info_start_y + info_height + separator_gap + bio_text_gap + len(bio_lines) * 25 + padding
     
     image = create_gradient_background(width, height, Colors.BG_TOP, Colors.BG_BOTTOM)
     draw = ImageDraw.Draw(image)
@@ -312,20 +327,20 @@ def generate_user_info_image(qq_id: int, qq_name: str, vrc_name: str, vrc_id: st
     draw.text((avatar_x + avatar_size + 20, card_y + 10), vrc_name, font=font_value, fill=Colors.TEXT_MAIN)
     draw.text((avatar_x + avatar_size + 20, card_y + 40), vrc_id, font=font_label, fill=Colors.TEXT_SUB)
     
-    info_y = card_y + avatar_size + section_gap
-    
-    info_rows = [
-        row for row in [
-            ("QQ 昵称:", qq_name),
-            ("QQ 号码:", str(qq_id)),
-            ("在线状态:", status) if status else None
-        ]
-        if row is not None
-    ]
+    info_y = info_start_y
     
     for label, value in info_rows:
         draw.text((padding, info_y), label, font=font_label, fill=Colors.TEXT_SUB)
-        draw.text((padding + 120, info_y), value, font=font_value, fill=Colors.TEXT_MAIN)
+        
+        # 处理过长的值
+        max_val_width = width - (padding + 120 + padding)
+        # 简单截断
+        display_val = value
+
+        if len(display_val) > 25: 
+             display_val = display_val[:24] + "..."
+             
+        draw.text((padding + 120, info_y), display_val, font=font_value, fill=Colors.TEXT_MAIN)
         info_y += 35
     
     separator_y = info_y + 15

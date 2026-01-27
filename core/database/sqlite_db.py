@@ -29,7 +29,6 @@ class SQLiteDatabase(BaseDatabase):
             )
         ''')
         
-        # 尝试迁移旧表 bindings -> global_bindings
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bindings'")
         if cursor.fetchone():
             cursor.execute("SELECT count(*) FROM global_bindings")
@@ -51,9 +50,17 @@ class SQLiteDatabase(BaseDatabase):
                 vrc_user_id TEXT NOT NULL,
                 vrc_display_name TEXT NOT NULL,
                 code TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_expired BOOLEAN DEFAULT 0
             )
         ''')
+        
+        # 添加 is_expired 列（如果表已存在但缺少该列）
+        try:
+            cursor.execute("ALTER TABLE verifications ADD COLUMN is_expired BOOLEAN DEFAULT 0")
+        except sqlite3.OperationalError:
+            # 列已存在，忽略错误
+            pass
             
         self.conn.commit()
 
@@ -82,7 +89,6 @@ class SQLiteDatabase(BaseDatabase):
             
             final_origin_group_id = group_id
             if row:
-                # 如果已有记录且 origin_group_id 不为空，则保持原值
                 if row[0] is not None:
                     final_origin_group_id = row[0]
 
@@ -115,6 +121,7 @@ class SQLiteDatabase(BaseDatabase):
             self._ensure_group_table(group_id)
             table_name = f"group_{group_id}_bindings"
             cursor.execute(f"DELETE FROM {table_name} WHERE qq_id = ?", (qq_id,))
+            deleted_rows = cursor.rowcount
             
             # 2. 更新全局表来源 (如果来源是该群，则置空)
             cursor.execute(
@@ -123,7 +130,7 @@ class SQLiteDatabase(BaseDatabase):
             )
             
             self.conn.commit()
-            return True
+            return deleted_rows > 0
         except Exception as e:
             print(f"SQLite 群组解绑操作失败: {e}")
             return False
@@ -202,12 +209,32 @@ class SQLiteDatabase(BaseDatabase):
             print(f"获取群绑定记录失败: {e}")
             return []
 
+    def get_group_member_binding(self, group_id: int, qq_id: int) -> Optional[Dict]:
+        """获取指定群成员的绑定记录"""
+        try:
+            self._ensure_group_table(group_id)
+            table_name = f"group_{group_id}_bindings"
+            cursor = self.conn.cursor()
+            cursor.execute(f"SELECT qq_id, vrc_user_id, vrc_display_name, bind_time FROM {table_name} WHERE qq_id = ?", (qq_id,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "qq_id": row[0],
+                    "vrc_user_id": row[1],
+                    "vrc_display_name": row[2],
+                    "bind_time": row[3]
+                }
+            return None
+        except Exception as e:
+            print(f"获取群成员绑定记录失败: {e}")
+            return None
+
     def add_verification(self, qq_id: int, vrc_user_id: str, vrc_display_name: str, code: str) -> bool:
         try:
             cursor = self.conn.cursor()
             cursor.execute(
-                "INSERT OR REPLACE INTO verifications (qq_id, vrc_user_id, vrc_display_name, code) VALUES (?, ?, ?, ?)",
-                (qq_id, vrc_user_id, vrc_display_name, code)
+                "INSERT OR REPLACE INTO verifications (qq_id, vrc_user_id, vrc_display_name, code, is_expired) VALUES (?, ?, ?, ?, ?)",
+                (qq_id, vrc_user_id, vrc_display_name, code, 0)
             )
             self.conn.commit()
             return True
@@ -217,7 +244,7 @@ class SQLiteDatabase(BaseDatabase):
 
     def get_verification(self, qq_id: int) -> Optional[Dict]:
         cursor = self.conn.cursor()
-        cursor.execute("SELECT qq_id, vrc_user_id, vrc_display_name, code, created_at FROM verifications WHERE qq_id = ?", (qq_id,))
+        cursor.execute("SELECT qq_id, vrc_user_id, vrc_display_name, code, created_at, is_expired, (strftime('%s','now') - strftime('%s', created_at)) as elapsed FROM verifications WHERE qq_id = ?", (qq_id,))
         row = cursor.fetchone()
         if row:
             return {
@@ -225,7 +252,9 @@ class SQLiteDatabase(BaseDatabase):
                 "vrc_user_id": row[1],
                 "vrc_display_name": row[2],
                 "code": row[3],
-                "created_at": row[4]
+                "created_at": row[4],
+                "is_expired": bool(row[5]),
+                "elapsed": int(row[6]) if row[6] is not None else 0
             }
         return None
 
@@ -239,11 +268,95 @@ class SQLiteDatabase(BaseDatabase):
             print(f"SQLite 删除验证记录失败: {e}")
             return False
 
+    def mark_verification_expired(self, qq_id: int) -> bool:
+        """标记验证码为已过期"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("UPDATE verifications SET code = ?, is_expired = 1 WHERE qq_id = ?", 
+                          ("Ciallo～(∠・ω< )⌒★", qq_id))
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"SQLite 标记验证记录过期失败: {e}")
+            return False
+
+    def expire_outdated_verifications(self, expiry_seconds: int) -> int:
+        """批量标记过期的验证记录"""
+        try:
+            import time
+            cutoff_time = time.time() - expiry_seconds
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "UPDATE verifications SET code = ?, is_expired = 1 WHERE created_at < ? AND is_expired = 0",
+                ("Ciallo～(∠・ω< )⌒★", str(cutoff_time))
+            )
+            self.conn.commit()
+            return cursor.rowcount
+        except Exception as e:
+            print(f"SQLite 批量标记过期记录失败: {e}")
+            return 0
+
+    def set_group_vrc_group_id(self, group_id: int, vrc_group_id: str) -> bool:
+        """设置群组绑定的 VRChat 群组 ID"""
+        try:
+            self._ensure_connection()
+            # 确保存储群组配置的表存在 (这里我们使用一个简单的 group_configs 表)
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS group_configs (
+                    group_id INTEGER PRIMARY KEY,
+                    vrc_group_id TEXT
+                )
+            ''')
+            
+            cursor.execute(
+                "INSERT OR REPLACE INTO group_configs (group_id, vrc_group_id) VALUES (?, ?)",
+                (group_id, vrc_group_id)
+            )
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"SQLite 设置群组 VRChat 群组 ID 失败: {e}")
+            return False
+
+    def get_group_vrc_group_id(self, group_id: int) -> Optional[str]:
+        """获取群组绑定的 VRChat 群组 ID"""
+        try:
+            self._ensure_connection()
+            cursor = self.conn.cursor()
+            # 检查表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='group_configs'")
+            if not cursor.fetchone():
+                return None
+                
+            cursor.execute("SELECT vrc_group_id FROM group_configs WHERE group_id = ?", (group_id,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"SQLite 获取群组 VRChat 群组 ID 失败: {e}")
+            return None
+
+    def delete_group_vrc_group_id(self, group_id: int) -> bool:
+        """删除群组绑定的 VRChat 群组 ID"""
+        try:
+            self._ensure_connection()
+            cursor = self.conn.cursor()
+            # 检查表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='group_configs'")
+            if not cursor.fetchone():
+                return False
+                
+            cursor.execute("DELETE FROM group_configs WHERE group_id = ?", (group_id,))
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            print(f"SQLite 删除群组 VRChat 群组 ID 失败: {e}")
+            return False
+
     def search_global_bindings(self, query: str) -> List[Dict]:
         """全局搜索绑定记录"""
         cursor = self.conn.cursor()
         search_pattern = f"%{query}%"
-        # 尝试将 query 转为 int 以匹配 qq_id
         qq_id_query = -1
         if query.isdigit():
             qq_id_query = int(query)

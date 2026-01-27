@@ -1,8 +1,9 @@
 import argparse
 import os
+import sys
 import asyncio
 import logging
-i
+import json
 # 确保能找到项目模块 (将当前目录加入 sys.path)
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
@@ -65,7 +66,7 @@ async def async_main():
     logger = logging.getLogger("Main")
 
     # 4. 初始化并启动机器人管理器
-    bot_manager = BotManager(config_data)
+    bot_manager = BotManager(config_data, config_path)
     
     try:
         await bot_manager.start()

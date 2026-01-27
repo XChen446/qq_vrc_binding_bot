@@ -22,8 +22,9 @@ from core.database import get_database
 logger = logging.getLogger("BotManager")
 
 class BotManager:
-    def __init__(self, config_data: Dict[str, Any]):
+    def __init__(self, config_data: Dict[str, Any], config_path: str = None):
         self.config_data = config_data
+        self.config_path = config_path
         self._is_running = False
         
         # 1. 初始化配置
@@ -58,7 +59,7 @@ class BotManager:
         self.db = get_database(self.config_data)
         
         # 业务处理器
-        self.message_handler = MessageHandler(self)
+        self.message_handler = MessageHandler(self, config_path=self.config_path)
         self.group_handler = GroupHandler(self)
         self.vrc_handler = WorldHandler(self)
         

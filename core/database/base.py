@@ -46,6 +46,16 @@ class BaseDatabase(ABC):
         """
         pass
 
+    @abstractmethod
+    def get_group_member_binding(self, group_id: int, qq_id: int) -> Optional[Dict]:
+        """
+        获取指定群成员的绑定记录
+        :param group_id: 群号
+        :param qq_id: QQ号
+        :return: 绑定记录字典
+        """
+        pass
+
 
     @abstractmethod
     def get_qq_by_vrc_id(self, vrc_user_id: str) -> Optional[int]:
@@ -109,6 +119,52 @@ class BaseDatabase(ABC):
         """
         删除验证记录
         :param qq_id: QQ号
+        :return: 是否成功
+        """
+        pass
+
+    @abstractmethod
+    def mark_verification_expired(self, qq_id: int) -> bool:
+        """
+        标记验证码为已过期
+        :param qq_id: QQ号
+        :return: 是否成功
+        """
+        pass
+
+    @abstractmethod
+    def expire_outdated_verifications(self, expiry_seconds: int) -> int:
+        """
+        批量标记过期的验证记录
+        :param expiry_seconds: 有效期秒数
+        :return: 影响的行数
+        """
+        pass
+
+    @abstractmethod
+    def set_group_vrc_group_id(self, group_id: int, vrc_group_id: str) -> bool:
+        """
+        设置群组绑定的 VRChat 群组 ID
+        :param group_id: QQ群号
+        :param vrc_group_id: VRChat 群组 ID
+        :return: 是否成功
+        """
+        pass
+
+    @abstractmethod
+    def get_group_vrc_group_id(self, group_id: int) -> Optional[str]:
+        """
+        获取群组绑定的 VRChat 群组 ID
+        :param group_id: QQ群号
+        :return: VRChat 群组 ID
+        """
+        pass
+
+    @abstractmethod
+    def delete_group_vrc_group_id(self, group_id: int) -> bool:
+        """
+        删除群组绑定的 VRChat 群组 ID
+        :param group_id: QQ群号
         :return: 是否成功
         """
         pass

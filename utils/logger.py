@@ -1,9 +1,7 @@
 import logging
 import os
 import sys
-import time
-import zipfile
-import glob
+import gzip
 from logging.handlers import TimedRotatingFileHandler
 from colorama import Fore, Style, init
 
@@ -108,27 +106,26 @@ def archive_old_logs(log_dir: str, policy: dict = None):
 
     # 3. 执行归档
     if files_to_archive:
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        zip_filename = f"logs_{timestamp}.zip"
-        zip_path = os.path.join(archive_dir, zip_filename)
-
-        try:
-            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for filename in files_to_archive:
-                    file_path = os.path.join(log_dir, filename)
-                    zipf.write(file_path, filename)
+        archived_count = 0
+        for filename in files_to_archive:
+            file_path = os.path.join(log_dir, filename)
+            gz_filename = f"{filename}.gz"
+            gz_path = os.path.join(archive_dir, gz_filename)
             
-            print(f"📦 已归档 {len(files_to_archive)} 个日志文件到 {zip_filename}")
-            
-            # 归档后删除
-            for filename in files_to_archive:
-                try:
-                    os.remove(os.path.join(log_dir, filename))
-                except Exception as e:
-                    print(f"⚠️ 无法删除已归档文件 {filename}: {e}")
-                    
-        except Exception as e:
-            print(f"❌ 归档失败: {e}")
+            try:
+                with open(file_path, 'rb') as f_in:
+                    with gzip.open(gz_path, 'wb') as f_out:
+                        f_out.writelines(f_in)
+                
+                # 归档后删除原文件
+                os.remove(file_path)
+                archived_count += 1
+                
+            except Exception as e:
+                print(f"⚠️ 无法归档文件 {filename}: {e}")
+        
+        if archived_count > 0:
+            print(f"📦 已归档 {archived_count} 个日志文件到 {archive_dir}")
 
     # 4. 执行直接删除
     if files_to_delete:
