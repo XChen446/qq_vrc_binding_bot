@@ -9,6 +9,7 @@ from vrchatapi.models.two_factor_auth_code import TwoFactorAuthCode
 from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 from vrchatapi.configuration import Configuration
 from vrchatapi.rest import ApiException
+from vrchatapi import ApiClient
 
 logger = logging.getLogger("VRChatAPI")
 
@@ -31,10 +32,13 @@ class VRCApiClient:
         if proxy:
             self.configuration.proxy = proxy
         
+        # 使用ApiClient包装配置以支持异步调用
+        api_client = ApiClient(self.configuration)
+        
         # 初始化API实例
-        self.authentication_api = authentication_api.AuthenticationApi(self.configuration)
-        self.users_api = users_api.UsersApi(self.configuration)
-        self.groups_api = groups_api.GroupsApi(self.configuration)
+        self.authentication_api = authentication_api.AuthenticationApi(api_client)
+        self.users_api = users_api.UsersApi(api_client)
+        self.groups_api = groups_api.GroupsApi(api_client)
         
         # 延迟初始化认证类，避免构造时的导入问题
         self._auth = None
@@ -73,8 +77,12 @@ class VRCApiClient:
                 # 应用请求限流
                 await self._rate_limit(func.__name__)
                 
-                # 执行API调用
-                result = await func(*args, **kwargs)
+                # 执行API调用 - 使用线程池执行器来实现异步调用
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: func(*args, **kwargs)
+                )
                 return result
             except ApiException as e:
                 if e.status == 401:
@@ -134,8 +142,9 @@ class VRCApiClient:
             
             # 否则进行搜索
             api_response = await self._make_authenticated_request(
-                self.users_api.get_users_async,
-                search=query, n=10
+                self.users_api.get_users,
+                search=query, n=10,
+                async_req=True
             )
             
             if not api_response:
@@ -178,8 +187,9 @@ class VRCApiClient:
         """获取用户信息"""
         try:
             user = await self._make_authenticated_request(
-                self.users_api.get_user_async,
-                user_id=user_id
+                self.users_api.get_user,
+                user_id=user_id,
+                async_req=True
             )
             if user:
                 return {
@@ -218,9 +228,10 @@ class VRCApiClient:
         """获取群组成员信息"""
         try:
             member = await self._make_authenticated_request(
-                self.groups_api.get_group_member_async,
+                self.groups_api.get_group_member,
                 group_id=group_id, 
-                user_id=user_id
+                user_id=user_id,
+                async_req=True
             )
             if member:
                 return {
@@ -252,10 +263,11 @@ class VRCApiClient:
         """添加群组角色"""
         try:
             response = await self._make_authenticated_request(
-                self.groups_api.add_group_role_async,
+                self.groups_api.add_group_role,
                 group_id=group_id,
                 user_id=user_id,
-                json_role_id=role_id
+                json_role_id=role_id,
+                async_req=True
             )
             return response
         except Exception as e:
@@ -267,8 +279,9 @@ class VRCApiClient:
         try:
             # 尝试获取群组信息作为替代
             group = await self._make_authenticated_request(
-                self.groups_api.get_group_async,
-                group_id=group_id
+                self.groups_api.get_group,
+                group_id=group_id,
+                async_req=True
             )
             if group:
                 return [{
@@ -298,8 +311,9 @@ class VRCApiClient:
         """获取群组信息"""
         try:
             group = await self._make_authenticated_request(
-                self.groups_api.get_group_async,
-                group_id=group_id
+                self.groups_api.get_group,
+                group_id=group_id,
+                async_req=True
             )
             if group:
                 return {

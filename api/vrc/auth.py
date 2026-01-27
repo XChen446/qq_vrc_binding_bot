@@ -9,6 +9,7 @@ from vrchatapi.models.two_factor_auth_code import TwoFactorAuthCode
 from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 from vrchatapi.rest import UnauthorizedException
 from vrchatapi.configuration import Configuration
+from vrchatapi import ApiClient
 
 logger = logging.getLogger("VRChatAPI.Auth")
 
@@ -16,7 +17,9 @@ class VRCAuth:
     def __init__(self, client, configuration):
         self.client = client
         self.configuration = configuration
-        self.authentication_api = authentication_api.AuthenticationApi(configuration)
+        # 使用ApiClient包装configuration以支持异步调用
+        api_client = ApiClient(configuration)
+        self.authentication_api = authentication_api.AuthenticationApi(api_client)
         self._last_auth_time = 0
         self._auth_lock = asyncio.Lock()
 
@@ -39,6 +42,11 @@ class VRCAuth:
                 return False
 
             try:
+                # 更新配置中的用户名和密码
+                self.configuration.username = username
+                self.configuration.password = password
+
+                # 尝试获取当前用户信息来触发登录
                 login_success = await self._perform_login(username, password, totp_secret)
                 if login_success:
                     self._last_auth_time = time.time()
@@ -51,7 +59,10 @@ class VRCAuth:
         """检查现有会话是否有效"""
         try:
             # 尝试获取当前用户信息来验证会话
-            current_user = await self.authentication_api.get_current_user_async()
+            current_user = await asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: self.authentication_api.get_current_user(async_req=True)
+            )
             if current_user and hasattr(current_user, 'display_name'):
                 logger.info(f"当前用户: {current_user.display_name}")
                 return True
@@ -68,17 +79,14 @@ class VRCAuth:
 
     async def _perform_login(self, username: str, password: str, totp_secret: Optional[str]) -> bool:
         try:
-            # 使用VRChat API进行登录
-            login_response = await self.authentication_api.login_async(
-                username=username,
-                password=password
+            # 直接尝试获取当前用户信息来触发登录
+            current_user = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.authentication_api.get_current_user(async_req=True)
             )
             
-            # 再次获取当前用户信息，检查是否需要2FA
-            current_user = await self.authentication_api.get_current_user_async()
+            # 检查是否需要2FA
             if hasattr(current_user, 'requires_two_factor_auth') and current_user.requires_two_factor_auth:
-                return await self._handle_2fa(totp_secret)
-            elif "twoFactorAuth" in str(login_response) if hasattr(login_response, '__str__') else False:
                 return await self._handle_2fa(totp_secret)
             
             logger.info("VRChat 登录成功")
@@ -151,10 +159,16 @@ class VRCAuth:
         try:
             if method == "totp":
                 two_factor_request = TwoFactorAuthCode(code=code)
-                await self.authentication_api.verify_two_factor_auth_async(two_factor_auth_code=two_factor_request)
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.authentication_api.verify2_fa(two_factor_auth_code=two_factor_request, async_req=True)
+                )
             elif method == "email":
                 email_code_request = TwoFactorEmailCode(code=code)
-                await self.authentication_api.verify_email_otp_async(two_factor_email_code=email_code_request)
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self.authentication_api.verify2_fa_email_code(two_factor_email_code=email_code_request, async_req=True)
+                )
             
             logger.info("2FA 验证通过")
             return True
@@ -173,7 +187,10 @@ class VRCAuth:
     async def verify_auth(self) -> bool:
         """异步验证会话有效性"""
         try:
-            current_user = await self.authentication_api.get_current_user_async()
+            current_user = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.authentication_api.get_current_user(async_req=True)
+            )
             if current_user and hasattr(current_user, 'display_name'):
                 logger.info(f"当前用户: {current_user.display_name}")
                 return True
