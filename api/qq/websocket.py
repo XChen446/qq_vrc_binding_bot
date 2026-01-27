@@ -40,6 +40,7 @@ class QQWebSocketManager:
                 self.bot = Bot()
         
         self.on_message_callback: Optional[Callable[[dict], None]] = None
+        self.ws = None  # 保持与调度器的兼容性
 
     async def connect(self):
         """连接到QQ WebSocket服务"""
@@ -70,13 +71,30 @@ class QQWebSocketManager:
             
             # 启动机器人 - 根据ncatbot的实际API调整
             if hasattr(self.bot, 'run'):
+                # 为了与调度器兼容，我们需要设置ws属性
+                # 这里我们存储bot实例，以便调度器可以检查连接状态
+                self.ws = self.bot
                 await self.bot.run()
             elif hasattr(self.bot, 'start'):
+                self.ws = self.bot
                 await self.bot.start()
             else:
                 # 如果没有run或start方法，模拟连接
                 logger.info("使用模拟连接模式")
-                
+                # 在模拟模式下，我们可以创建一个简单的模拟对象
+                class MockWS:
+                    @property
+                    def closed(self):
+                        return False
+                    
+                    async def ping(self):
+                        """模拟ping方法，返回一个假的pong等待器"""
+                        async def mock_pong():
+                            await asyncio.sleep(0.01)  # 模拟网络延迟
+                            return True
+                        return mock_pong()
+                self.ws = MockWS()
+
         except Exception as e:
             logger.error(f"连接到QQ WebSocket失败: {e}", exc_info=True)
             raise
@@ -88,6 +106,10 @@ class QQWebSocketManager:
             await self.bot.close()
         elif hasattr(self.bot, 'stop'):
             await self.bot.stop()
+        
+        # 断开连接时清除ws属性
+        if hasattr(self, 'ws'):
+            self.ws = None
 
     def send_message(self, message_data: dict):
         """发送消息"""
