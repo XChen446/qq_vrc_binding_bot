@@ -43,16 +43,14 @@ class ConfigLoader:
             "features": {
             },
             "verification": {
-                "mode": "mixed",  # 验证模式: mixed(混合), strict(严格), disabled(禁用)
-                "group_id": "",  # 目标VRChat群组ID，用于群组验证
+                "mode": "mixed",  # 验证模式: mixed(混合), strict(严格), disabled(禁用) - 已迁移至群组配置，此处为默认值
                 "timeout": 300,  # 验证超时时间(秒)
                 "code_expiry": 300,  # 验证码过期时间(秒)
-                "auto_rename": True,  # 验证成功后是否自动修改群昵称
+                "auto_rename": True,  # 验证成功后是否自动修改群昵称 - 已迁移至群组配置，此处为默认值
                 "check_occupy": True,  # 是否检查VRChat账号是否已被占用
-                "check_group_membership": False,  # 是否检查VRChat群组成员资格
-                "check_troll": False,  # 是否启用风险账号检测
-                "auto_assign_role": False,  # 验证成功后是否自动分配角色
-                "target_role_id": ""  # 目标角色ID，用于自动分配角色
+                "check_group_membership": False,  # 是否检查VRChat群组成员资格 - 已迁移至群组配置，此处为默认值
+                "check_troll": False,  # 是否启用风险账号检测 - 已迁移至群组配置，此处为默认值
+                "auto_assign_role": False  # 验证成功后是否自动分配角色 - 已迁移至群组配置，此处为默认值
             }
         },
         "database": {

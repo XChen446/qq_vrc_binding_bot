@@ -176,6 +176,22 @@ class MessageHandler:
             "set": "[设置项] [值] - 设置群组功能开关和参数(仅群管可用)"
         }
         
+        # 添加验证模式说明
+        if is_admin:
+            help_lines.append("\n💡 验证模式说明:")
+            help_lines.append("   mixed - 混合模式: 允许用户入群后完成验证，超时未验证将被禁言")
+            help_lines.append("   strict - 严格模式: 必须先验证才能入群，超时未验证将被踢出")
+            help_lines.append("   disabled - 禁用模式: 不强制验证")
+            
+            # 添加关于角色分配权限的提醒
+            help_lines.append("\n🛡️ 重要提醒:")
+            help_lines.append("   当启用 auto_assign_role 时，需要确保机器人账号")
+            help_lines.append("   在 VRChat 群组中有分配角色的权限。")
+            help_lines.append("   请使用 !set vrc_group_id 和 !set target_role_id 设置必要参数。")
+        
+        help_lines.append("\n💡 使用 !set 可设置群组功能")
+        
+        
         for cmd, desc in commands_help.items():
             cfg = self._get_command_config(cmd)
             if not cfg.get("enabled", True):
@@ -319,14 +335,17 @@ class MessageHandler:
                 reply = f"✅ 验证成功！已绑定 VRChat 账号: {vrc_name}"
                 
                 if group_id:
-                    if self.bot.vrc_config.verification.get("auto_rename"):
+                    # 使用群组配置而不是全局配置
+                    auto_rename_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "auto_rename", str(self.bot.vrc_config.verification.get("auto_rename", "True")))
+                    if auto_rename_setting.lower() == "true":
                         try:
                             await self.bot.qq_client.set_group_card(group_id, user_id, vrc_name)
                         except Exception as e:
                             logger.warning(f"改名失败: {e}")
                     
-                    if self.bot.vrc_config.verification.get("auto_assign_role"):
-                        await assign_vrc_role(self.bot, vrc_id)
+                    auto_assign_role_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "auto_assign_role", str(self.bot.vrc_config.verification.get("auto_assign_role", "False")))
+                    if auto_assign_role_setting.lower() == "true":
+                        await assign_vrc_role(self.bot, vrc_id, group_id)
 
                     # 获取群组设置来决定是否发送欢迎消息
                     enable_welcome = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
@@ -380,19 +399,12 @@ class MessageHandler:
         if not is_admin:
             return None
         
-        # 检查用户是否在全局验证表中
-        global_verification = await safe_db_operation(self.bot.db.get_global_verification, target_qq)
-        if global_verification:
-            # 如果在全局验证表中，群管只能解绑群组记录，不能影响全局验证
-            success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
-            if success:
-                return f"✅ 已从本群解绑 QQ: {target_qq}，但该用户仍在全局验证表中"
-            else:
-                return f"❌ 解绑失败，该用户可能未绑定或已解绑"
+        # 群管只能解绑群组记录，不能影响全局验证和全局绑定
+        success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
+        if success:
+            return f"✅ 已从本群解绑 QQ: {target_qq}"
         else:
-            # 如果不在全局验证表中，群管可以解绑群组记录
-            success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
-            return f"✅ 已从本群解绑 QQ: {target_qq}" if success else f"❌ 解绑失败，该用户可能未绑定或已解绑"
+            return f"❌ 解绑失败，该用户可能未在本群绑定或已解绑"
 
     async def _cmd_list(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         # 1. 检查是否在群聊中使用
