@@ -15,6 +15,9 @@ from typing import Dict, Any, List
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(project_root)
 
+# 设置环境变量，以便模块导入时能找到配置文件
+os.environ.setdefault('CONFIG_PATH', os.path.join(project_root, 'config/config.json'))
+
 def setup_logging():
     """设置测试日志"""
     logging.basicConfig(
@@ -84,7 +87,8 @@ async def test_basic_logic():
     print("\n2.1 配置加载测试:")
     try:
         from src.core.global_config import load_all_config
-        config = load_all_config("config/config.json")
+        config_path = os.path.join(project_root, "config", "config.json")
+        config = load_all_config(config_path)
         if config:
             print("  ✅ 配置加载成功")
             print(f"     - 日志级别: {config.get('bot', {}).get('log_level', 'NOT SET')}")
@@ -144,7 +148,8 @@ async def test_database_operations():
         from src.core.database import get_database
         from src.core.global_config import load_all_config
         
-        config = load_all_config("config/config.json")
+        config_path = os.path.join(project_root, "config", "config.json")
+        config = load_all_config(config_path)
         if not config:
             print("  ⚠️ 无法加载配置，使用默认配置")
             config = {
@@ -192,7 +197,8 @@ async def test_vrc_api():
         from src.core.global_config import load_all_config
         from vrchatapi.configuration import Configuration
         
-        config = load_all_config("config/config.json")
+        config_path = os.path.join(project_root, "config", "config.json")
+        config = load_all_config(config_path)
         if not config:
             print("  ⚠️ 无法加载配置，使用默认配置")
             config = {
@@ -268,8 +274,10 @@ async def test_message_handling():
     try:
         from src.handlers.qq_handler.message_handler import MessageHandler
         from src.core.global_config import load_all_config
+        from src.utils.admin_utils import is_super_admin, is_group_admin_or_owner
         
-        config = load_all_config("config/config.json")
+        config_path = os.path.join(project_root, "config", "config.json")
+        config = load_all_config(config_path)
         if not config:
             print("  ⚠️ 无法加载配置，使用默认配置")
             config = {
@@ -285,7 +293,8 @@ async def test_message_handling():
                         "search": {"enabled": True},
                         "query": {"enabled": True},
                         "me": {"enabled": True}
-                    }
+                    },
+                    "admin_qq": []
                 }
             }
         
@@ -295,8 +304,8 @@ async def test_message_handling():
                 self.config_data = config
                 self.global_config = type('GlobalConfig', (), {
                     'commands': config.get('bot', {}).get('commands', {}),
-                    'group_admins': {},
-                    'admin_qq': []
+                    'admin_qq': config.get('bot', {}).get('admin_qq', []),
+                    'group_admins': {}  # 现在使用实时API获取角色信息
                 })()
                 self.vrc_config = type('VRCConfig', (), {
                     'verification': {'code_expiry': 300}
@@ -304,17 +313,19 @@ async def test_message_handling():
                 
                 # 模拟数据库
                 class MockDB:
-                    async def get_binding(self, qq_id): return None
-                    async def get_verification(self, qq_id): return None
-                    async def get_pending_vrc_info(self, qq_id): return None
-                    async def get_group_vrc_group_id(self, group_id): return None
-                    async def get_group_bindings(self, group_id): return []
+                    def get_binding(self, qq_id): return None
+                    def get_verification(self, qq_id): return None
+                    def get_pending_vrc_info(self, qq_id): return None
+                    def get_group_vrc_group_id(self, group_id): return None
+                    def get_group_bindings(self, group_id): return []
                 
                 self.db = MockDB()
                 
                 # 模拟QQ客户端
                 class MockQQClient:
-                    async def get_group_member_info(self, group_id, user_id): return {"role": "member"}
+                    async def get_group_member_info(self, group_id, user_id):
+                        # 模拟返回用户角色信息
+                        return {"role": "member", "card": f"User_{user_id}", "nickname": f"Nickname_{user_id}"}
                     async def get_group_member_list(self, group_id): return []
                     async def get_stranger_info(self, user_id): return {"nickname": f"User_{user_id}"}
                     async def send_group_msg(self, group_id, message): pass

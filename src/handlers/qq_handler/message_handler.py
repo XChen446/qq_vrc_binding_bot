@@ -7,7 +7,7 @@ from src.utils.image_generator import generate_binding_list_image
 from src.utils.verification import calculate_verification_elapsed, assign_vrc_role
 from src.utils.code_generator import generate_verification_code
 from src.core.database.utils import safe_db_operation
-from src.utils.admin_utils import is_super_admin
+from src.utils.admin_utils import is_super_admin, is_group_admin_or_owner
 
 logger = logging.getLogger("QQBot.MessageHandler")
 
@@ -109,10 +109,6 @@ class MessageHandler:
             logger.error(f"指令处理异常: {command} | Error: {e}")
             await self._reply(data, f"❌ 指令执行出错: {e}")
 
-    def _is_user_admin(self, user_id: int, group_id: Optional[int] = None) -> bool:
-        return is_super_admin(user_id, self.bot.global_config.admin_qq) or \
-               (group_id and user_id in self.bot.global_config.group_admins.get(str(group_id), set()))
-    
     async def _is_user_group_admin_or_owner(self, user_id: int, group_id: Optional[int] = None) -> bool:
         """验证用户是否为群管理员或群主"""
         if is_super_admin(user_id, self.bot.global_config.admin_qq):
@@ -121,22 +117,8 @@ class MessageHandler:
         if not group_id:
             return False
             
-        try:
-            # 获取群成员信息
-            member_info = await self.bot.qq_client.get_group_member_info(group_id, user_id)
-            if not member_info:
-                return False
-                
-            # 检查角色字段
-            # owner(群主), admin(管理员), member(普通成员)
-            role = member_info.get('role', '').lower()
-            return role in ['owner', 'admin']
-            
-        except Exception as e:
-            logger.warning(f"获取群成员信息失败: {e}")
-            if str(group_id) in self.bot.global_config.group_admins:
-                return user_id in self.bot.global_config.group_admins[str(group_id)]
-            return False
+        # 使用 NapCat API 获取真实的群成员角色信息
+        return await is_group_admin_or_owner(user_id, group_id, self.bot.qq_client)
 
     async def _handle_command(self, command: str, args: list, context: Dict[str, Any]):
         user_id = context.get("user_id")
@@ -672,24 +654,25 @@ class MessageHandler:
         target_qq = int(at_match.group(1))
         
         try:
-            group_admins = self.bot.global_config.group_admins.get(str(group_id), [])
-            # 确保是列表
-            if isinstance(group_admins, set):
-                group_admins = list(group_admins)
-            
-            if target_qq in group_admins:
-                group_admins.remove(target_qq)
-                self.bot.global_config.group_admins[str(group_id)] = group_admins
-                self.bot.global_config.save()
-                return f"✅ 已取消 {target_qq} 的群管理员权限"
-            else:
-                group_admins.append(target_qq)
-                self.bot.global_config.group_admins[str(group_id)] = group_admins
-                self.bot.global_config.save()
-                return f"✅ 已提升 {target_qq} 为群管理员"
+            # 从 NapCat 获取用户角色信息，而不是依赖配置
+            member_info = await self.bot.qq_client.get_group_member_info(group_id, target_qq)
+            if not member_info:
+                return f"❌ 无法获取用户信息: {target_qq}"
                 
+            current_role = member_info.get('role', 'member')
+            
+            if current_role in ['admin', 'owner']:
+                # 如果是管理员或群主，取消管理员权限
+                # 注意：NapCat本身不提供修改群管理员权限的API
+                # 我们只能通过配置来管理虚拟的管理员权限
+                # 但在新的设计中，我们完全依赖NapCat返回的角色信息
+                return f"❌ 无法操作：{target_qq} 当前是群{ '主' if current_role == 'owner' else '管理员' }，需要在QQ群中直接操作"
+            else:
+                # 如果不是管理员，提示需要在QQ群中直接设置
+                return f"❌ 无法操作：需要在QQ群中将 {target_qq} 设置为管理员或群主"
+
         except Exception as e:
-            logger.error(f"管理群管理员失败: {e}")
+            logger.error(f"检查用户角色失败: {e}")
             return f"❌ 操作失败: {e}"
 
     async def _cmd_glbind(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:

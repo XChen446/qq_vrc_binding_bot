@@ -17,26 +17,41 @@ def is_super_admin(user_id: int, admin_qq_list: list) -> bool:
     user_id_str = str(user_id)
     return any(str(admin_qq) == user_id_str for admin_qq in admin_qq_list)
 
-def is_group_admin_or_owner(user_id: int, group_id: Optional[int], global_config) -> bool:
-    """检查用户是否为群管理员或群主
+async def is_group_admin_or_owner(user_id: int, group_id: Optional[int], qq_client) -> bool:
+    """检查用户是否为群管理员或群主，通过 NapCat API 获取真实角色信息
     
     Args:
         user_id: 用户QQ号
         group_id: 群号
-        global_config: 全局配置对象
+        qq_client: QQ客户端实例，用于调用API
         
     Returns:
         bool: 是否为群管理员或群主
     """
     # 超级管理员直接通过
-    if is_super_admin(user_id, global_config.admin_qq):
+    from src.core.global_config import load_all_config
+    config_data = load_all_config("config/config.json")
+    if config_data:
+        admin_qq_list = config_data.get("bot", {}).get("admin_qq", [])
+    else:
+        admin_qq_list = []
+        
+    if is_super_admin(user_id, admin_qq_list):
         return True
         
     if not group_id:
         return False
+    
+    try:
+        # 通过 NapCat API 获取真实的群成员信息
+        member_info = await qq_client.get_group_member_info(group_id, user_id)
+        if not member_info:
+            return False
         
-    # 检查群管理员配置
-    group_admins = global_config.group_admins.get(str(group_id), [])
-    # 同样进行类型兼容处理
-    user_id_str = str(user_id)
-    return any(str(admin) == user_id_str for admin in group_admins)
+        # 检查 NapCat 返回的角色信息
+        role = member_info.get('role', 'member').lower()
+        return role in ['owner', 'admin']
+        
+    except Exception as e:
+        logger.error(f"获取群成员角色信息失败: {e}")
+        return False

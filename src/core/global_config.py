@@ -6,7 +6,9 @@ from typing import Dict, Any, Optional, List
 logger = logging.getLogger("Config")
 
 class ConfigLoader:
-    """配置加载器"""
+    """配置加载器
+    负责配置文件的加载、创建、更新和合并操作
+    """
     
     DEFAULT_CONFIG = {
         "bot": {
@@ -17,7 +19,6 @@ class ConfigLoader:
                 "on_success": "archive"  # 成功时的日志归档策略: archive(归档), delete(删除), keep(保留)
             },
             "admin_qq": [],  # 全局超级管理员QQ号列表，这些用户拥有所有管理员权限
-            "group_admins": {},  # 群级管理员配置 {群号: [管理员QQ列表]}，格式如 {"123456": [111111, 222222]}
             "enable_welcome": True,  # 是否启用入群欢迎功能
             "templates": {
                 "welcome": "欢迎加入！请查看群公告。",  # 入群欢迎消息模板
@@ -84,7 +85,16 @@ class ConfigLoader:
 
     @staticmethod
     def load_config(config_path: str) -> Optional[Dict[str, Any]]:
-
+        """加载配置文件
+        如果配置文件不存在，则创建默认配置文件
+        如果配置文件存在但缺少字段，则自动补充新字段
+        
+        Args:
+            config_path: 配置文件路径
+            
+        Returns:
+            配置字典，如果加载失败则返回None
+        """
         if not os.path.exists(config_path):
             return ConfigLoader._create_default_config(config_path)
             
@@ -104,6 +114,15 @@ class ConfigLoader:
 
     @staticmethod
     def _create_default_config(config_path: str) -> None:
+        """创建默认配置文件
+        当配置文件不存在时，创建包含默认配置的文件
+        
+        Args:
+            config_path: 配置文件路径
+            
+        Returns:
+            None
+        """
         logger.warning(f"配置文件 {config_path} 不存在，尝试创建默认配置...")
         try:
             ConfigLoader._save_json(config_path, ConfigLoader.DEFAULT_CONFIG)
@@ -116,13 +135,30 @@ class ConfigLoader:
 
     @staticmethod
     def _save_json(file_path: str, data: Dict[str, Any]):
+        """保存数据到JSON文件
+        自动创建目录（如果不存在）并将数据保存为格式化的JSON
+        
+        Args:
+            file_path: 文件路径
+            data: 要保存的数据字典
+        """
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
     @staticmethod
     def _deep_merge(default: Dict, current: Dict) -> bool:
-        """递归合并配置"""
+        """深度合并配置字典
+        将default字典中的新字段添加到current字典中
+        如果current字典中已有对应字段，则不覆盖
+        
+        Args:
+            default: 默认配置字典（源）
+            current: 当前配置字典（目标）
+            
+        Returns:
+            bool: 如果进行了任何更新则返回True，否则返回False
+        """
         updated = False
         for key, value in default.items():
             if key not in current:
@@ -134,40 +170,89 @@ class ConfigLoader:
         return updated
 
 def load_all_config(config_path: str) -> Optional[Dict[str, Any]]:
-    """兼容旧代码的入口"""
+    """兼容旧代码的配置加载入口
+    提供向后兼容的配置加载函数
+    
+    Args:
+        config_path: 配置文件路径
+        
+    Returns:
+        配置字典，如果加载失败则返回None
+    """
     return ConfigLoader.load_config(config_path)
 
 
 class GlobalConfig:
+    """全局配置类
+    提供便捷的配置访问接口，支持属性访问和字典访问两种方式
+    """
     
     def __init__(self, data: Dict[str, Any]):
+        """初始化全局配置对象
+        
+        Args:
+            data: 配置数据字典
+        """
         self.data = data
     
     def get(self, key: str, default: Any = None) -> Any:
-
+        """获取配置值
+        从根配置中获取指定键的值
+        
+        Args:
+            key: 配置键
+            default: 默认值
+            
+        Returns:
+            配置值，如果不存在则返回默认值
+        """
         return self.data.get(key, default)
     
     @property
     def bot(self) -> Dict[str, Any]:
-        """获取机器人配置"""
+        """获取机器人配置
+        返回配置中的bot部分
+        
+        Returns:
+            机器人配置字典
+        """
         return self.data.get("bot", {})
     
     @property
     def database(self) -> Dict[str, Any]:
-        """获取数据库配置"""
+        """获取数据库配置
+        返回配置中的database部分
+        
+        Returns:
+            数据库配置字典
+        """
         return self.data.get("database", {})
     
     @property
     def group_admins(self) -> Dict[str, List[int]]:
         """获取群管理员配置
+        此方法已废弃，现在通过 NapCat API 获取真实的群管理员信息
         
         Returns:
-            群管理员配置字典，格式为 {群号: [管理员QQ列表]}
+            空字典，因为现在使用实时API获取角色信息
         """
-        return self.data.get("bot", {}).get("group_admins", {})
+        # 已废弃：现在使用 NapCat API 获取真实的群管理员信息
+        return {}
 
     def __getattr__(self, name: str) -> Any:
-
+        """动态获取配置属性
+        允许通过属性访问配置值
+        首先尝试从bot配置中获取，然后从根配置中获取
+        
+        Args:
+            name: 属性名
+            
+        Returns:
+            配置值
+            
+        Raises:
+            AttributeError: 如果属性不存在
+        """
         # 1. 尝试从 bot 配置中获取
         bot_config = self.data.get("bot", {})
         if name in bot_config:
