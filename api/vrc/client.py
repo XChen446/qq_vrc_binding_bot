@@ -1,149 +1,330 @@
 import os
 import logging
-import aiohttp
 import asyncio
-from http.cookiejar import LWPCookieJar, Cookie
-from urllib.parse import urljoin
+import time
 from typing import Optional, Dict, Any, List
-from .auth import VRCAuth
+import vrchatapi
+from vrchatapi.api import authentication_api, users_api, groups_api
+from vrchatapi.models.two_factor_auth_code import TwoFactorAuthCode
+from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
+from vrchatapi.configuration import Configuration
+from vrchatapi.rest import ApiException
 
 logger = logging.getLogger("VRChatAPI")
 
 class VRCApiClient:
-    BASE_URL = "https://api.vrchat.cloud/api/1/"
-
     def __init__(self, config, cookie_path: str = "data/cookies.txt"):
         self.config = config
         self.cookie_path = cookie_path
         
-        # 构造 User-Agent
-        contact_email = config.username if "@" in config.username else "2748376556@qq.com"
-        user_agent = config.user_agent or f"QQVRCBindingBot/1.0 ({contact_email})"
-            
-        self.headers = {
-            "User-Agent": user_agent,
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
+        # 设置API配置
+        username = getattr(config, 'username', '') or (config.get('username') if hasattr(config, 'get') else '')
+        password = getattr(config, 'password', '') or (config.get('password') if hasattr(config, 'get') else '')
         
-        self.cookies = LWPCookieJar(filename=cookie_path)
-        if os.path.exists(cookie_path):
-            try:
-                self.cookies.load(ignore_discard=True, ignore_expires=True)
-            except Exception as e:
-                logger.warning(f"加载 Cookies 失败: {e}")
+        self.configuration = Configuration()
+        if username and password:
+            self.configuration.username = username
+            self.configuration.password = password
         
-        self.proxy = config.proxy
-        self._session: Optional[aiohttp.ClientSession] = None
-        self._semaphore = asyncio.Semaphore(5)
-        self.auth = VRCAuth(self)
+        # 如果提供了代理，则设置代理
+        proxy = getattr(config, 'proxy', '') or (config.get('proxy') if hasattr(config, 'get') else '')
+        if proxy:
+            self.configuration.proxy = proxy
+        
+        # 初始化API实例
+        self.authentication_api = authentication_api.AuthenticationApi(self.configuration)
+        self.users_api = users_api.UsersApi(self.configuration)
+        self.groups_api = groups_api.GroupsApi(self.configuration)
+        
+        # 延迟初始化认证类，避免构造时的导入问题
+        self._auth = None
+        
+        # 请求限流设置
+        self._last_request_time = {}
+        self._min_request_interval = 0.1  # 最小请求间隔（秒）
 
-    async def get_session(self) -> aiohttp.ClientSession:
-        """获取或创建 aiohttp session"""
-        if self._session is None or self._session.closed:
-            await self._create_session()
-        if self._session is None:
-            raise RuntimeError("无法创建会话")
-        return self._session
-
-    async def _create_session(self) -> None:
-        cookie_dict = {cookie.name: cookie.value for cookie in self.cookies}
-        self._session = aiohttp.ClientSession(
-            headers=self.headers,
-            cookies=cookie_dict,
-            connector=aiohttp.TCPConnector(limit=10, ttl_dns_cache=300)
-        )
+    @property
+    def auth(self):
+        """懒加载认证实例"""
+        if self._auth is None:
+            from .auth import VRCAuth
+            self._auth = VRCAuth(self, self.configuration)
+        return self._auth
 
     async def close(self) -> None:
-        """关闭 session"""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        """关闭连接"""
+        # 在新库中可能不需要特殊关闭操作
+        pass
 
-    def save_cookies(self) -> None:
-        """保存 Cookies 到文件"""
-        if self._session:
-            self._update_cookies_from_jar()
-        try:
-            os.makedirs(os.path.dirname(self.cookie_path), exist_ok=True)
-            self.cookies.save(ignore_discard=True, ignore_expires=True)
-        except Exception as e:
-            logger.error(f"保存 Cookies 失败: {e}")
-
-    def _update_cookies_from_jar(self) -> None:
-        if not self._session:
-            return
-        simple_cookie = self._session.cookie_jar.filter_cookies(self.BASE_URL)
-        for name, morsel in simple_cookie.items():
-            domain = morsel['domain'] or ".vrchat.cloud"
-            path = morsel['path'] or "/"
-            c = Cookie(
-                version=0, name=name, value=morsel.value, port=None, port_specified=False,
-                domain=domain, domain_specified=bool(domain), domain_initial_dot=domain.startswith('.'),
-                path=path, path_specified=bool(path), secure=bool(morsel['secure']), expires=None,
-                discard=False, comment=None, comment_url=None, rest={'HttpOnly': morsel['httponly']}, rfc2109=False,
-            )
-            self.cookies.set_cookie(c)
-
-    async def _request(self, method: str, endpoint: str, retry_on_auth: bool = True, **kwargs) -> Optional[Any]:
-        """统一请求封装，支持自动重试"""
-        url = urljoin(self.BASE_URL, endpoint)
-        session = await self.get_session()
+    async def _rate_limit(self, endpoint: str):
+        """请求限流"""
+        current_time = time.time()
+        if endpoint in self._last_request_time:
+            elapsed = current_time - self._last_request_time[endpoint]
+            if elapsed < self._min_request_interval:
+                await asyncio.sleep(self._min_request_interval - elapsed)
         
-        async with self._semaphore:
+        self._last_request_time[endpoint] = time.time()
+
+    async def _make_authenticated_request(self, func, *args, max_retries=3, **kwargs):
+        """带认证和重试机制的请求包装器"""
+        for attempt in range(max_retries):
             try:
-                if self.proxy:
-                    kwargs["proxy"] = self.proxy
+                # 应用请求限流
+                await self._rate_limit(func.__name__)
                 
-                logger.debug(f"API 请求: {method} {url} | Params: {kwargs.get('params')} | Data: {bool(kwargs.get('json') or kwargs.get('data'))}")
-                async with session.request(method, url, **kwargs) as response:
-                    return await self._handle_response(response, method, endpoint, retry_on_auth, **kwargs)
+                # 执行API调用
+                result = await func(*args, **kwargs)
+                return result
+            except ApiException as e:
+                if e.status == 401:
+                    # 认证失败，尝试重新登录
+                    logger.warning(f"API认证失败 (401) on attempt {attempt + 1}, attempting re-authentication...")
+                    if attempt < max_retries - 1:  # 不在最后一次尝试时重试
+                        auth_success = await self.auth.login()
+                        if auth_success:
+                            continue  # 重试请求
+                        else:
+                            logger.error("重新认证失败")
+                            break
+                    else:
+                        logger.error(f"API认证失败，已达最大重试次数: {e}")
+                        break
+                elif e.status == 429:
+                    # 请求频率过高，等待后重试
+                    wait_time = 2 ** attempt  # 指数退避
+                    logger.warning(f"请求频率过高 (429), 等待 {wait_time} 秒后重试...")
+                    await asyncio.sleep(wait_time)
+                    if attempt < max_retries - 1:
+                        continue
+                else:
+                    logger.error(f"API错误 ({e.status}): {e}")
+                    if attempt == max_retries - 1:
+                        raise e  # 如果是最后一次尝试，抛出异常
+                    await asyncio.sleep(2 ** attempt)  # 指数退避
+            except asyncio.TimeoutError:
+                logger.warning(f"请求超时 on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    raise
+            except ConnectionError:
+                logger.warning(f"连接错误 on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    raise
             except Exception as e:
-                logger.error(f"VRC API 请求异常: {e}")
-                return None
-
-    async def _handle_response(self, response: aiohttp.ClientResponse, method: str, endpoint: str, retry_on_auth: bool, **kwargs) -> Optional[Any]:
-        status = response.status
-        if 200 <= status < 300:
-            logger.debug(f"API 响应成功: {method} {endpoint} (HTTP {status})")
-            if status == 204 or response.content_length == 0:
-                return True
-            try:
-                return await response.json()
-            except Exception:
-                return await response.text()
+                logger.error(f"未知错误: {e}")
+                if attempt == max_retries - 1:
+                    raise e
+                await asyncio.sleep(2 ** attempt)
         
-        if status == 401 and retry_on_auth:
-            logger.warning("Token 失效，尝试重新登录...")
-            if await self.auth.login():
-                return await self._request(method, endpoint, retry_on_auth=False, **kwargs)
-        
-        logger.error(f"VRC API 错误: {method} {endpoint} (HTTP {status})")
         return None
 
-    # ==================== 用户相关接口 ====================
-
-    async def search_user(self, query: str) -> List[Dict[str, Any]]:
+    async def search_users(self, query: str) -> List[Dict[str, Any]]:
         """搜索用户"""
-        if query.startswith("usr_"):
-            user = await self.get_user(query)
-            return [user] if user else []
-        result = await self._request("GET", "users", params={"search": query, "n": 10})
-        return result if isinstance(result, list) else []
+        try:
+            # 如果是usr_开头的ID，直接获取用户
+            if query.startswith("usr_"):
+                user = await self.get_user(query)
+                return [user] if user else []
+            
+            # 否则进行搜索
+            api_response = await self._make_authenticated_request(
+                self.users_api.get_users_async,
+                search=query, n=10
+            )
+            
+            if not api_response:
+                return []
+                
+            users = []
+            for user in api_response:
+                user_dict = {
+                    "id": user.id,
+                    "username": user.username,
+                    "displayName": user.display_name,
+                    "currentAvatarImageUrl": user.current_avatar_image_url,
+                    "currentAvatarThumbnailImageUrl": user.current_avatar_thumbnail_image_url,
+                    "status": user.status,
+                    "statusDescription": user.status_description,
+                    "bio": user.bio,
+                    "isBanned": user.is_banned,
+                    "isBoopingEnabled": user.is_booping_enabled,
+                    "date_joined": user.date_joined,
+                    "last_platform": user.last_platform,
+                    "allow_avatar_copying": user.allow_avatar_copying,
+                    "tags": user.tags,
+                    "developer_type": user.developer_type,
+                    "moderation_status": user.moderation_status,
+                    "badges": user.badges,
+                    "thumbnail_url": user.thumbnail_url,
+                    "profile_pic_override": user.profile_pic_override,
+                    "user_icon": user.user_icon,
+                    "location": user.location,
+                    "home_location": user.home_location,
+                    "state": user.state
+                }
+                users.append(user_dict)
+            return users
+        except Exception as e:
+            logger.error(f"搜索用户失败: {e}")
+            return []
 
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """获取用户信息"""
-        return await self._request("GET", f"users/{user_id}")
+        try:
+            user = await self._make_authenticated_request(
+                self.users_api.get_user_async,
+                user_id=user_id
+            )
+            if user:
+                return {
+                    "id": user.id,
+                    "username": user.username,
+                    "displayName": user.display_name,
+                    "currentAvatarImageUrl": user.current_avatar_image_url,
+                    "currentAvatarThumbnailImageUrl": user.current_avatar_thumbnail_image_url,
+                    "status": user.status,
+                    "statusDescription": user.status_description,
+                    "bio": user.bio,
+                    "isBanned": user.is_banned,
+                    "isBoopingEnabled": user.is_booping_enabled,
+                    "date_joined": user.date_joined,
+                    "last_platform": user.last_platform,
+                    "allow_avatar_copying": user.allow_avatar_copying,
+                    "tags": user.tags,
+                    "developer_type": user.developer_type,
+                    "moderation_status": user.moderation_status,
+                    "badges": user.badges,
+                    "thumbnail_url": user.thumbnail_url,
+                    "profile_pic_override": user.profile_pic_override,
+                    "user_icon": user.user_icon,
+                    "location": user.location,
+                    "home_location": user.home_location,
+                    "state": user.state
+                }
+            return None
+        except Exception as e:
+            logger.error(f"获取用户信息失败: {e}")
+            return None
 
     # ==================== 群组相关接口 ====================
 
     async def get_group_member(self, group_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """获取群组成员信息"""
-        return await self._request("GET", f"groups/{group_id}/members/{user_id}")
+        try:
+            member = await self._make_authenticated_request(
+                self.groups_api.get_group_member_async,
+                group_id=group_id, 
+                user_id=user_id
+            )
+            if member:
+                return {
+                    "userId": member.user_id,
+                    "groupId": member.group_id,
+                    "isRepresenting": member.is_representing,
+                    "isVisible": member.is_visible,
+                    "managerNotes": member.manager_notes,
+                    "roleIds": member.role_ids,
+                    "roles": member.roles,
+                    "permissions": member.permissions,
+                    "createdAt": member.created_at,
+                    "bannedAt": member.banned_at,
+                    "acceptedAt": member.accepted_at,
+                    "isSubscribedToAnnouncements": member.is_subscribed_to_announcements,
+                    "membershipStatus": member.membership_status,
+                    "isPending": member.is_pending,
+                    "isVisible": member.is_visible,
+                    "hasBioLink": member.has_bio_link,
+                    "profilePicOverride": member.profile_pic_override,
+                    "profilePicOverrideThumbnail": member.profile_pic_override_thumbnail
+                }
+            return None
+        except Exception as e:
+            logger.error(f"获取群组成员信息失败: {e}")
+            return None
 
     async def add_group_role(self, group_id: str, user_id: str, role_id: str) -> Optional[Any]:
         """添加群组角色"""
-        return await self._request("PUT", f"groups/{group_id}/members/{user_id}/roles/{role_id}")
+        try:
+            response = await self._make_authenticated_request(
+                self.groups_api.add_group_role_async,
+                group_id=group_id,
+                user_id=user_id,
+                json_role_id=role_id
+            )
+            return response
+        except Exception as e:
+            logger.error(f"添加群组角色失败: {e}")
+            return None
 
     async def get_group_instances(self, group_id: str) -> Optional[Any]:
         """获取群组实例"""
-        return await self._request("GET", f"groups/{group_id}/instances")
+        try:
+            # 尝试获取群组信息作为替代
+            group = await self._make_authenticated_request(
+                self.groups_api.get_group_async,
+                group_id=group_id
+            )
+            if group:
+                return [{
+                    "id": group.id,
+                    "name": group.name,
+                    "shortCode": group.short_code,
+                    "discriminator": group.discriminator,
+                    "description": group.description,
+                    "ownerId": group.owner_id,
+                    "public": group.public,
+                    "verified": group.verified,
+                    "featured": group.featured,
+                    "iconUrl": group.icon_url,
+                    "bannerUrl": group.banner_url,
+                    "privacy": group.privacy,
+                    "rules": group.rules,
+                    "links": group.links,
+                    "instanceCount": 0,  # 无法直接获取实例数
+                    "memberCount": group.member_count
+                }]
+            return []
+        except Exception as e:
+            logger.error(f"获取群组实例失败: {e}")
+            return None
+
+    async def get_group(self, group_id: str) -> Optional[Dict[str, Any]]:
+        """获取群组信息"""
+        try:
+            group = await self._make_authenticated_request(
+                self.groups_api.get_group_async,
+                group_id=group_id
+            )
+            if group:
+                return {
+                    "id": group.id,
+                    "name": group.name,
+                    "shortCode": group.short_code,
+                    "discriminator": group.discriminator,
+                    "description": group.description,
+                    "ownerId": group.owner_id,
+                    "public": group.public,
+                    "verified": group.verified,
+                    "featured": group.featured,
+                    "iconUrl": group.icon_url,
+                    "bannerUrl": group.banner_url,
+                    "privacy": group.privacy,
+                    "rules": group.rules,
+                    "links": group.links,
+                    "memberCount": group.member_count,
+                    "memberCountSyncedAt": group.member_count_synced_at,
+                    "gallery": group.gallery,
+                    "isVerified": group.is_verified,
+                    "isFeatured": group.is_featured,
+                    "isPublic": group.is_public
+                }
+            return None
+        except Exception as e:
+            logger.error(f"获取群组信息失败: {e}")
+            return None

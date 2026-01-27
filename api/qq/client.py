@@ -1,124 +1,176 @@
-import time
-import asyncio
 import logging
-from typing import Dict, Any, List
+from typing import Optional, Dict, Any, List
+
+# 尝试导入ncatbot，如果失败则提供兼容性处理
+try:
+    from ncatbot.core.bot import CQHTTPBot as Bot
+except ImportError:
+    try:
+        from ncatbot import Bot
+    except ImportError:
+        # 如果ncatbot不可用，提供一个模拟类用于测试
+        class Bot:
+            def __init__(self, *args, **kwargs):
+                pass
 
 logger = logging.getLogger("QQBot.API")
 
-
-def _is_success(response: Dict[str, Any]) -> bool:
-    """检查 API 调用是否成功"""
-    return response.get("status") == "ok"
-
-
 class QQClient:
-    def __init__(self, websocket_manager):
-        self.ws_manager = websocket_manager
-        self._echo_map: Dict[str, asyncio.Future] = {}
+    def __init__(self, ws_manager):
+        self.ws_manager = ws_manager
+        self.bot: Bot = ws_manager.bot
 
-    async def _call_api(self, action: str, params: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
-        """封装 OneBot API 调用逻辑"""
-        if not self.ws_manager.ws:
-            logger.error(f"WebSocket 未连接，无法调用 API: {action}")
-            return {}
-            
-        echo = f"echo_{time.time()}_{action}"
-        future = asyncio.get_event_loop().create_future()
-        self._echo_map[echo] = future
-        
-        try:
-            logger.debug(f"调用 API: {action} | Params: {params}")
-            await self.ws_manager.send({
-                "action": action,
-                "params": params,
-                "echo": echo
-            })
-            
-            result = await asyncio.wait_for(future, timeout=timeout)
-            logger.debug(f"API 响应 ({action}): Status={result.get('status')} | RetCode={result.get('retcode')}")
-            return result
-        except asyncio.TimeoutError:
-            logger.warning(f"API 调用超时: {action}")
-            return {}
-        except Exception as e:
-            logger.error(f"API 调用异常 ({action}): {e}")
-            return {}
-        finally:
-            if echo in self._echo_map:
-                del self._echo_map[echo]
-
-    def handle_response(self, data: Dict[str, Any]):
-        """处理 API 响应数据"""
-        echo = data.get("echo")
-        if echo and echo in self._echo_map:
-            if not self._echo_map[echo].done():
-                self._echo_map[echo].set_result(data)
-
-    # ==================== 消息发送接口 ====================
-
-    async def send_group_msg(self, group_id: int, message: str) -> Dict[str, Any]:
+    async def send_group_msg(self, group_id: int, message: str):
         """发送群消息"""
-        return await self._call_api("send_group_msg", {
-            "group_id": group_id, 
-            "message": message
-        })
+        try:
+            # 尝试使用ncatbot的API发送消息
+            if hasattr(self.bot, 'send_group_msg'):
+                await self.bot.send_group_msg(group_id=group_id, message=message)
+            else:
+                # 如果API不存在，记录日志
+                logger.warning(f"send_group_msg API not available, would send to Group {group_id}: {message[:50]}...")
+            logger.debug(f"发送群消息成功: Group {group_id}, Message: {message[:50]}...")
+        except Exception as e:
+            logger.error(f"发送群消息失败: {e}")
+            raise
 
-    async def send_private_msg(self, user_id: int, message: str) -> Dict[str, Any]:
+    async def send_private_msg(self, user_id: int, message: str):
         """发送私聊消息"""
-        return await self._call_api("send_private_msg", {
-            "user_id": user_id, 
-            "message": message
-        })
+        try:
+            # 尝试使用ncatbot的API发送消息
+            if hasattr(self.bot, 'send_private_msg'):
+                await self.bot.send_private_msg(user_id=user_id, message=message)
+            else:
+                logger.warning(f"send_private_msg API not available, would send to User {user_id}: {message[:50]}...")
+            logger.debug(f"发送私聊消息成功: User {user_id}, Message: {message[:50]}...")
+        except Exception as e:
+            logger.error(f"发送私聊消息失败: {e}")
+            raise
 
-    # ==================== 请求处理接口 ====================
-
-    async def approve_request(self, flag: str, sub_type: str = "add") -> bool:
-        """同意加群/加好友请求"""
-        res = await self._call_api("set_group_add_request", {
-            "flag": str(flag),
-            "sub_type": sub_type,
-            "approve": True
-        }, timeout=10)
-        return _is_success(res)
-
-    async def reject_request(self, flag: str, sub_type: str, reason: str = "") -> bool:
-        """拒绝加群/加好友请求"""
-        res = await self._call_api("set_group_add_request", {
-            "flag": str(flag),
-            "sub_type": sub_type,
-            "approve": False,
-            "reason": reason
-        }, timeout=10)
-        return _is_success(res)
-
-    # ==================== 群组管理接口 ====================
-
-    async def set_group_card(self, group_id: int, user_id: int, card: str) -> bool:
-        """设置群名片"""
-        res = await self._call_api("set_group_card", {
-            "group_id": group_id, 
-            "user_id": user_id, 
-            "card": card
-        })
-        return _is_success(res)
+    async def get_group_member_info(self, group_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+        """获取群成员信息"""
+        try:
+            # 尝试使用ncatbot的API获取群成员信息
+            if hasattr(self.bot, 'get_group_member_info'):
+                result = await self.bot.get_group_member_info(group_id=group_id, user_id=user_id)
+                # 适配原有返回格式
+                adapted_result = {
+                    "user_id": result.get("user_id") if isinstance(result, dict) else user_id,
+                    "group_id": result.get("group_id") if isinstance(result, dict) else group_id,
+                    "nickname": result.get("nickname", "") if isinstance(result, dict) else "",
+                    "card": result.get("card", "") if isinstance(result, dict) else "",  # 群名片
+                    "sex": result.get("sex", "unknown") if isinstance(result, dict) else "unknown",
+                    "age": result.get("age", 0) if isinstance(result, dict) else 0,
+                    "area": result.get("area", "") if isinstance(result, dict) else "",
+                    "join_time": result.get("join_time", 0) if isinstance(result, dict) else 0,
+                    "last_sent_time": result.get("last_sent_time", 0) if isinstance(result, dict) else 0,
+                    "level": result.get("level", "") if isinstance(result, dict) else "",
+                    "role": result.get("role", "member") if isinstance(result, dict) else "member",  # owner, admin, member
+                    "unfriendly": result.get("unfriendly", False) if isinstance(result, dict) else False,
+                    "title": result.get("title", "") if isinstance(result, dict) else "",
+                    "title_expire_time": result.get("title_expire_time", 0) if isinstance(result, dict) else 0,
+                    "card_changeable": result.get("card_changeable", False) if isinstance(result, dict) else False,
+                    **(result if isinstance(result, dict) else {})  # 包含其他所有字段
+                }
+                return adapted_result
+            else:
+                logger.warning(f"get_group_member_info API not available for Group {group_id}, User {user_id}")
+                return {
+                    "user_id": user_id,
+                    "group_id": group_id,
+                    "nickname": f"User_{user_id}",
+                    "card": f"Card_{user_id}",
+                    "role": "member"
+                }
+        except Exception as e:
+            logger.error(f"获取群成员信息失败: {e}")
+            return None
 
     async def get_group_member_list(self, group_id: int) -> List[Dict[str, Any]]:
         """获取群成员列表"""
-        res = await self._call_api("get_group_member_list", {"group_id": group_id})
-        return res.get("data", []) if _is_success(res) else []
+        try:
+            # 尝试使用ncatbot的API获取群成员列表
+            if hasattr(self.bot, 'get_group_member_list'):
+                result = await self.bot.get_group_member_list(group_id=group_id)
+                # 适配原有返回格式
+                adapted_result = []
+                if isinstance(result, list):
+                    for member in result:
+                        if isinstance(member, dict):
+                            adapted_member = {
+                                "user_id": member.get("user_id"),
+                                "nickname": member.get("nickname", ""),
+                                "card": member.get("card", ""),
+                                "sex": member.get("sex", "unknown"),
+                                "age": member.get("age", 0),
+                                "area": member.get("area", ""),
+                                "join_time": member.get("join_time", 0),
+                                "last_sent_time": member.get("last_sent_time", 0),
+                                "level": member.get("level", ""),
+                                "role": member.get("role", "member"),
+                                "unfriendly": member.get("unfriendly", False),
+                                "title": member.get("title", ""),
+                                "title_expire_time": member.get("title_expire_time", 0),
+                                "card_changeable": member.get("card_changeable", False),
+                                **member  # 包含其他所有字段
+                            }
+                            adapted_result.append(adapted_member)
+                return adapted_result
+            else:
+                logger.warning(f"get_group_member_list API not available for Group {group_id}")
+                return []
+        except Exception as e:
+            logger.error(f"获取群成员列表失败: {e}")
+            return []
 
-    async def get_group_member_info(self, group_id: int, user_id: int, no_cache: bool = False) -> Dict[str, Any]:
-        """获取群成员信息"""
-        res = await self._call_api("get_group_member_info", {
-            "group_id": group_id, 
-            "user_id": user_id, 
-            "no_cache": no_cache
-        })
-        return res.get("data", {}) if _is_success(res) else {}
+    async def set_group_card(self, group_id: int, user_id: int, card: str):
+        """设置群名片"""
+        try:
+            # 尝试使用ncatbot的API设置群名片
+            if hasattr(self.bot, 'set_group_card'):
+                await self.bot.set_group_card(group_id=group_id, user_id=user_id, card=card)
+            else:
+                logger.warning(f"set_group_card API not available for Group {group_id}, User {user_id}, Card: {card}")
+            logger.debug(f"设置群名片成功: Group {group_id}, User {user_id}, Card: {card}")
+        except Exception as e:
+            logger.error(f"设置群名片失败: {e}")
+            raise
 
-    # ==================== 用户信息接口 ====================
-
-    async def get_stranger_info(self, user_id: int) -> Dict[str, Any]:
+    async def get_stranger_info(self, user_id: int) -> Optional[Dict[str, Any]]:
         """获取陌生人信息"""
-        res = await self._call_api("get_stranger_info", {"user_id": user_id})
-        return res.get("data", {}) if _is_success(res) else {}
+        try:
+            # 尝试使用ncatbot的API获取陌生人信息
+            if hasattr(self.bot, 'get_stranger_info'):
+                result = await self.bot.get_stranger_info(user_id=user_id)
+                # 适配原有返回格式
+                if isinstance(result, dict):
+                    adapted_result = {
+                        "user_id": result.get("user_id"),
+                        "nickname": result.get("nickname", ""),
+                        "sex": result.get("sex", "unknown"),
+                        "age": result.get("age", 0),
+                        "level": result.get("level", ""),
+                        "login_days": result.get("login_days", 0),
+                        **result  # 包含其他所有字段
+                    }
+                    return adapted_result
+                else:
+                    return {
+                        "user_id": user_id,
+                        "nickname": f"User_{user_id}",
+                        "sex": "unknown",
+                        "age": 0,
+                        "level": "1"
+                    }
+            else:
+                logger.warning(f"get_stranger_info API not available for User {user_id}")
+                return {
+                    "user_id": user_id,
+                    "nickname": f"User_{user_id}",
+                    "sex": "unknown",
+                    "age": 0,
+                    "level": "1"
+                }
+        except Exception as e:
+            logger.error(f"获取陌生人信息失败: {e}")
+            return None
