@@ -19,7 +19,6 @@ class ConfigLoader:
                 "on_success": "archive"  # 成功时的日志归档策略: archive(归档), delete(删除), keep(保留)
             },
             "admin_qq": [],  # 全局超级管理员QQ号列表，这些用户拥有所有管理员权限
-            "enable_welcome": True,  # 是否启用入群欢迎功能
             "templates": {
                 "welcome": "欢迎加入！请查看群公告。",  # 入群欢迎消息模板
                 "verify_success": "验证成功！",  # 验证成功消息模板
@@ -42,8 +41,6 @@ class ConfigLoader:
                 "code": { "enabled": True, "admin_only": False }  # 重新获取验证码命令
             },
             "features": {
-                "auto_approve_group_request": False,  # 是否自动审批入群申请
-                "auto_bind_on_join": True  # 是否在入群时自动触发绑定流程
             },
             "verification": {
                 "mode": "mixed",  # 验证模式: mixed(混合), strict(严格), disabled(禁用)

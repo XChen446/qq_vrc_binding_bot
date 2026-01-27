@@ -328,7 +328,7 @@ class MessageHandler:
                     if self.bot.vrc_config.verification.get("auto_assign_role"):
                         await assign_vrc_role(self.bot, vrc_id)
 
-                    # 获取群设置来决定是否发送欢迎消息
+                    # 获取群组设置来决定是否发送欢迎消息
                     enable_welcome = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
                     if enable_welcome.lower() == "true":
                         welcome_message = await safe_db_operation(self.bot.db.get_group_setting, group_id, "welcome_message", "欢迎！")
