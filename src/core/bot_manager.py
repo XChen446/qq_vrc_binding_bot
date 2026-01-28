@@ -87,6 +87,7 @@ class BotManager:
             return
             
         logger.info("正在启动全异步机器人服务...")
+        logger.debug(f"配置数据: 全局配置={bool(self.global_config)}, QQ配置={bool(self.qq_config)}, VRChat配置={bool(self.vrc_config)}")
         self._is_running = True
         
         try:
@@ -100,27 +101,29 @@ class BotManager:
             )
         except Exception as e:
             logger.critical(f"Bot 启动失败: {e}", exc_info=True)
+            logger.debug(f"启动失败时的运行状态: {self._is_running}")
             await self.stop()
 
     async def stop(self):
         """停止机器人服务"""
-        logger.info("正在停止服务...")
+        logger.info(f"正在停止服务... 当前运行状态: {self._is_running}")
         self._is_running = False
         
         # 优雅关闭各组件
         await self.scheduler.stop()
         await self.ws_manager.disconnect()
         await self.vrc_client.close()
-        logger.info("服务已停止")
+        logger.info(f"服务已停止 当前运行状态: {self._is_running}")
 
     async def _ensure_vrc_auth(self):
         """确保 VRChat 认证有效"""
         logger.info("检查 VRChat 认证状态...")
+        logger.debug(f"当前认证状态: {await self.vrc_client.auth.verify_auth()}")
         if not await self.vrc_client.auth.verify_auth():
-            logger.warning("VRChat 验证失败，尝试重新登录...")
+            logger.warning(f"VRChat 验证失败，尝试重新登录... 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
             if not await self.vrc_client.auth.login():
-                logger.error("VRChat 登录失败，请检查配置。部分功能可能不可用。")
+                logger.error(f"VRChat 登录失败，请检查配置。部分功能可能不可用。 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
             else:
-                logger.info("VRChat 重新登录成功")
+                logger.info(f"VRChat 重新登录成功 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
         else:
-            logger.info("VRChat 认证有效")
+            logger.info(f"VRChat 认证有效 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")

@@ -20,16 +20,7 @@ class ConfigLoader:
                 "on_success": "archive"  # 成功时的日志归档策略: archive(归档), delete(删除), keep(保留)
             },
             "admin_qq": [],  # 全局超级管理员QQ号列表，这些用户拥有所有管理员权限
-            "templates": {
-                "welcome": "欢迎加入！请查看群公告。",  # 入群欢迎消息模板
-                "verify_success": "验证成功！",  # 验证成功消息模板
-                "reject_no_user": "无法识别 VRChat 账号，请在验证消息中填写 VRChat 链接或 ID",  # 未找到VRChat用户时的拒绝消息
-                "reject_already_bound": "该 VRChat 账号已被 QQ {existing_qq} 绑定",  # 账号已被绑定时拒绝消息
-                "reject_no_group": "您未加入指定的 VRChat 群组，请先加群",  # 未加入指定群组时的拒绝消息
-                "reject_troll": "系统检测到您的账号存在风险，拒绝入群",  # 检测到风险账号时的拒绝消息
-                "verification_request": "[CQ:at,qq={user_id}] 欢迎加入！\n检测到您申请绑定的 VRChat 账号为: {vrc_name}\n为了验证身份，请将您的 VRChat 状态描述(Status Description)修改为以下数字：\n{code}\n修改完成后，请在群内发送 !verify 完成验证。",  # 验证请求消息模板
-                "reminder_not_bound": "欢迎！请绑定 VRChat 账号。"  # 未绑定提醒消息模板
-            },
+
             "commands": {
                 "query": { "enabled": True, "admin_only": True, "max_results": 50 },  # 查询绑定信息命令
                 "bind": { "enabled": True, "admin_only": True },  # 手动绑定命令
@@ -100,12 +91,12 @@ class ConfigLoader:
             
             # 检查并合并新字段
             if ConfigLoader._deep_merge(ConfigLoader.DEFAULT_CONFIG, config):
-                logger.info(f"检测到配置文件缺失新字段，正在更新 {config_path}...")
+                logger.info(f"检测到配置文件 [{config_path}] 缺失新字段，正在更新...")
                 ConfigLoader._save_json(config_path, config)
                 
             return config
         except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
+            logger.error(f"加载配置文件失败 [{config_path}]: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -119,14 +110,14 @@ class ConfigLoader:
         Returns:
             None
         """
-        logger.warning(f"配置文件 {config_path} 不存在，尝试创建默认配置...")
+        logger.warning(f"配置文件 [{config_path}] 不存在，尝试创建默认配置...")
         try:
             ConfigLoader._save_json(config_path, ConfigLoader.DEFAULT_CONFIG)
-            logger.info(f"默认配置已创建: {config_path}")
-            logger.warning("请编辑配置文件，填写必要的配置项后重新运行")
+            logger.info(f"默认配置已创建: [{config_path}]")
+            logger.warning(f"请编辑配置文件 [{config_path}]，填写必要的配置项后重新运行")
             return None
         except Exception as e:
-            logger.error(f"创建默认配置失败: {e}")
+            logger.error(f"创建默认配置失败 [{config_path}]: {e}", exc_info=True)
             return None
 
     @staticmethod

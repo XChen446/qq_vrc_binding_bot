@@ -29,9 +29,11 @@ class QQClient:
             else:
                 # 如果API不存在，记录日志
                 logger.warning(f"send_group_msg API not available, would send to Group {group_id}: {message[:50]}...")
+                logger.debug(f"API详情: Bot对象类型={type(self.bot).__name__}, 可用方法={[m for m in dir(self.bot) if not m.startswith('_')] if hasattr(self.bot, '__dict__') else 'N/A'}")
             logger.debug(f"发送群消息成功: Group {group_id}, Message: {message[:50]}...")
+            logger.debug(f"发送详情: 消息长度={len(message)}, 时间={__import__('time').strftime('%Y-%m-%d %H:%M:%S', __import__('time').localtime())}")
         except Exception as e:
-            logger.error(f"发送群消息失败: {e}")
+            logger.error(f"发送群消息失败: Group {group_id}, Message: {message[:50]}..., Error: {e}", exc_info=True)
             raise
 
     async def send_private_msg(self, user_id: int, message: str):
@@ -42,9 +44,11 @@ class QQClient:
                 await self.bot.send_private_msg(user_id=user_id, message=message)
             else:
                 logger.warning(f"send_private_msg API not available, would send to User {user_id}: {message[:50]}...")
+                logger.debug(f"API详情: Bot对象类型={type(self.bot).__name__}, 可用方法={[m for m in dir(self.bot) if not m.startswith('_')] if hasattr(self.bot, '__dict__') else 'N/A'}")
             logger.debug(f"发送私聊消息成功: User {user_id}, Message: {message[:50]}...")
+            logger.debug(f"发送详情: 消息长度={len(message)}, 时间={__import__('time').strftime('%Y-%m-%d %H:%M:%S', __import__('time').localtime())}")
         except Exception as e:
-            logger.error(f"发送私聊消息失败: {e}")
+            logger.error(f"发送私聊消息失败: User {user_id}, Message: {message[:50]}..., Error: {e}", exc_info=True)
             raise
 
     async def get_group_member_info(self, group_id: int, user_id: int) -> Optional[Dict[str, Any]]:
@@ -75,6 +79,7 @@ class QQClient:
                 return adapted_result
             else:
                 logger.warning(f"get_group_member_info API not available for Group {group_id}, User {user_id}")
+                logger.debug(f"API详情: Bot对象类型={type(self.bot).__name__}, 可用方法={[m for m in dir(self.bot) if not m.startswith('_')] if hasattr(self.bot, '__dict__') else 'N/A'}")
                 return {
                     "user_id": user_id,
                     "group_id": group_id,
@@ -83,7 +88,7 @@ class QQClient:
                     "role": "member"
                 }
         except Exception as e:
-            logger.error(f"获取群成员信息失败: {e}")
+            logger.error(f"获取群成员信息失败: Group {group_id}, User {user_id}, Error: {e}", exc_info=True)
             return None
 
     async def get_group_member_list(self, group_id: int) -> List[Dict[str, Any]]:
@@ -118,9 +123,10 @@ class QQClient:
                 return adapted_result
             else:
                 logger.warning(f"get_group_member_list API not available for Group {group_id}")
+                logger.debug(f"API详情: Bot对象类型={type(self.bot).__name__}, 可用方法={[m for m in dir(self.bot) if not m.startswith('_')] if hasattr(self.bot, '__dict__') else 'N/A'}")
                 return []
         except Exception as e:
-            logger.error(f"获取群成员列表失败: {e}")
+            logger.error(f"获取群成员列表失败: Group {group_id}, Error: {e}", exc_info=True)
             return []
 
     async def set_group_card(self, group_id: int, user_id: int, card: str):
@@ -131,9 +137,11 @@ class QQClient:
                 await self.bot.set_group_card(group_id=group_id, user_id=user_id, card=card)
             else:
                 logger.warning(f"set_group_card API not available for Group {group_id}, User {user_id}, Card: {card}")
+                logger.debug(f"API详情: Bot对象类型={type(self.bot).__name__}, 可用方法={[m for m in dir(self.bot) if not m.startswith('_')] if hasattr(self.bot, '__dict__') else 'N/A'}")
             logger.debug(f"设置群名片成功: Group {group_id}, User {user_id}, Card: {card}")
+            logger.debug(f"设置详情: 名片长度={len(card)}, 时间={__import__('time').strftime('%Y-%m-%d %H:%M:%S', __import__('time').localtime())}")
         except Exception as e:
-            logger.error(f"设置群名片失败: {e}")
+            logger.error(f"设置群名片失败: Group {group_id}, User {user_id}, Card: {card}, Error: {e}", exc_info=True)
             raise
 
     async def get_stranger_info(self, user_id: int) -> Optional[Dict[str, Any]]:
@@ -164,6 +172,7 @@ class QQClient:
                     }
             else:
                 logger.warning(f"get_stranger_info API not available for User {user_id}")
+                logger.debug(f"API详情: Bot对象类型={type(self.bot).__name__}, 可用方法={[m for m in dir(self.bot) if not m.startswith('_')] if hasattr(self.bot, '__dict__') else 'N/A'}")
                 return {
                     "user_id": user_id,
                     "nickname": f"User_{user_id}",
@@ -172,5 +181,5 @@ class QQClient:
                     "level": "1"
                 }
         except Exception as e:
-            logger.error(f"获取陌生人信息失败: {e}")
+            logger.error(f"获取陌生人信息失败: User {user_id}, Error: {e}", exc_info=True)
             return None

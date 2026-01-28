@@ -43,22 +43,28 @@ async def assign_vrc_role(bot, vrc_id: str, group_id: int = None) -> bool:
         
         if not vrc_group_id:
             logger.warning(f"群组 {group_id} 未设置 VRChat 群组 ID，无法分配角色")
+            logger.debug(f"分配详情: VRC_ID={vrc_id}, Group_ID={group_id}, Target_Role={await safe_db_operation(bot.db.get_group_setting, group_id, 'target_role_id', '')}")
             return False
         
         if not target_role_id:
             logger.warning(f"群组 {group_id} 未设置目标角色 ID，无法分配角色")
+            logger.debug(f"分配详情: VRC_ID={vrc_id}, Group_ID={group_id}, VRC_Group={await safe_db_operation(bot.db.get_group_setting, group_id, 'vrc_group_id', '')}")
             return False
         
         # 检查机器人账号是否拥有分配角色的权限
         # 这里可以添加更详细的权限检查逻辑，但现在只是输出提醒日志
         logger.info(f"准备为用户 {vrc_id} 在群组 {group_id} 中分配角色 {target_role_id} (VRChat群组: {vrc_group_id})")
+        logger.debug(f"角色分配详情: VRC_User_ID={vrc_id}, Group_ID={group_id}, Target_Role_ID={target_role_id}, VRChat_Group_ID={vrc_group_id}")
         logger.info(f"⚠️ 请确保机器人账号在 VRChat 群组 {vrc_group_id} 中拥有分配角色 {target_role_id} 的权限")
+        logger.debug(f"权限检查详情: VRC_User_ID={vrc_id}, Group_ID={group_id}, Target_Role_ID={target_role_id}")
         
         if auto_assign_role and vrc_group_id and target_role_id:
             await bot.vrc_client.add_group_role(vrc_group_id, vrc_id, target_role_id)
             logger.info(f"已为用户 {vrc_id} 分配角色 {target_role_id} (群组: {group_id})")
+            logger.debug(f"分配成功详情: VRC_User_ID={vrc_id}, Group_ID={group_id}, Target_Role_ID={target_role_id}, VRChat_Group_ID={vrc_group_id}")
             return True
     except Exception as e:
         logger.warning(f"自动分配角色失败 ({vrc_id}): {e}")
+        logger.error(f"自动分配角色失败详情: VRC_ID={vrc_id}, Group_ID={group_id}, Target_Role_ID={target_role_id}, VRChat_Group_ID={vrc_group_id}, Error: {e}", exc_info=True)
         return False
     return False

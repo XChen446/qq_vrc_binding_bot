@@ -46,12 +46,15 @@ class GroupHandler:
         user_id = data.get("user_id")
         
         logger.info(f"成员 {user_id} 退出群 {group_id}，正在清理群组绑定记录...")
+        logger.debug(f"处理数据: {data}")
         # 只清理群组特定的绑定记录，保留全局绑定记录
         success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, user_id)
         if success:
             logger.info(f"已清理成员 {user_id} 在群 {group_id} 的绑定记录")
+            logger.debug(f"清理详情: 成功标记={success}")
         else:
             logger.warning(f"清理成员 {user_id} 在群 {group_id} 的绑定记录失败 (可能未绑定)")
+            logger.debug(f"清理详情: 成功标记={success}")
 
     async def _process_group_add(self, data: Dict[str, Any]):
         """处理加群请求逻辑"""
@@ -79,6 +82,7 @@ class GroupHandler:
         global_verification = await safe_db_operation(self.bot.db.get_global_verification, user_id)
         if global_verification:
             logger.info(f"用户 {user_id} 已在全局验证表中，自动同意入群申请")
+            logger.debug(f"全局验证详情: {global_verification}")
             await self.bot.qq_client.approve_request(flag, sub_type)
             return
 
@@ -90,6 +94,7 @@ class GroupHandler:
         vrc_user = await self._parse_vrc_user_from_comment(comment)
         if not vrc_user:
             logger.warning(f"无法识别附言中的 VRChat 账号: {comment}")
+            logger.debug(f"请求详情: Group={group_id}, User={user_id}, Flag={flag}, SubType={sub_type}")
             # 根据验证模式和自动拒绝设置处理
             if verification_mode == "disabled":
                 # 禁用模式下，如果自动拒绝开启，只有在无法识别VRChat账号时才拒绝
@@ -143,6 +148,7 @@ class GroupHandler:
                     "time": time.time()
                 }
                 logger.info(f"验证通过，正在同意申请: QQ={user_id}, VRC={vrc_user['displayName']}")
+                logger.debug(f"验证详情: Mode={verification_mode}, AutoReject={auto_reject}")
                 await self.bot.qq_client.approve_request(flag, sub_type)
         elif verification_mode == "mixed":
             # 混合模式：直接同意申请并收录global_bindings，允许用户进群后再完成绑定
@@ -158,6 +164,7 @@ class GroupHandler:
                 "time": time.time()
             }
             logger.info(f"验证通过，正在同意申请: QQ={user_id}, VRC={vrc_user['displayName']}")
+            logger.debug(f"验证详情: Mode={verification_mode}, AutoReject={auto_reject}")
             await self.bot.qq_client.approve_request(flag, sub_type)
         elif verification_mode == "disabled":
             # 禁用模式：只进行登记，不进行绑定
@@ -176,6 +183,7 @@ class GroupHandler:
                 "time": time.time()
             }
             logger.info(f"验证通过，正在同意申请: QQ={user_id}, VRC={vrc_user['displayName']}")
+            logger.debug(f"验证详情: Mode={verification_mode}, AutoReject={auto_reject}")
             await self.bot.qq_client.approve_request(flag, sub_type)
 
     async def _process_group_increase(self, data: Dict[str, Any]):

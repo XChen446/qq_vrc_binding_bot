@@ -33,6 +33,7 @@ class MessageConfig:
             # 检查配置文件是否存在
             if not os.path.exists(self.config_path):
                 logger.warning(f"消息配置文件不存在: {self.config_path}")
+                logger.debug(f"配置详情: 尝试创建默认配置文件...")
                 # 尝试创建默认配置
                 self.create_default_config()
                 return False
@@ -42,10 +43,11 @@ class MessageConfig:
                 self.messages = yaml.safe_load(f)
             
             logger.info(f"消息配置已加载: {self.config_path}")
+            logger.debug(f"配置详情: 消息类别数量={len(self.messages.keys()) if self.messages else 0}")
             return True
             
         except Exception as e:
-            logger.error(f"加载消息配置失败: {e}")
+            logger.error(f"加载消息配置失败: {self.config_path}, Error: {e}", exc_info=True)
             return False
     
     def create_default_config(self):
@@ -200,9 +202,10 @@ class MessageConfig:
                 yaml.dump(default_messages, f, default_flow_style=False, allow_unicode=True, indent=2)
             
             logger.info(f"默认消息配置已创建: {self.config_path}")
+            logger.debug(f"配置详情: 消息类别数量={len(yaml.safe_load(open(self.config_path, 'r', encoding='utf-8')))}")
             
         except Exception as e:
-            logger.error(f"创建默认消息配置失败: {e}")
+            logger.error(f"创建默认消息配置失败: {self.config_path}, Error: {e}", exc_info=True)
     
     def get_message(self, *keys, default: str = "") -> str:
         """
@@ -221,6 +224,7 @@ class MessageConfig:
                 current = current[key]
             else:
                 logger.warning(f"消息模板未找到: {'.'.join(keys)}")
+                logger.debug(f"模板详情: 尝试使用默认值='{default}', 配置路径={self.config_path}")
                 return default
         return current if isinstance(current, str) else default
     
@@ -241,6 +245,7 @@ class MessageConfig:
                 return template.format(**kwargs)
             except KeyError as e:
                 logger.warning(f"消息格式化失败，缺少参数: {e}, 模板: {template}")
+                logger.debug(f"格式化详情: 提供的参数={list(kwargs.keys())}, 缺少参数={str(e)}")
                 return template
         return ""
     

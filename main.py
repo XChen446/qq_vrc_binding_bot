@@ -27,7 +27,7 @@ async def async_main():
     config_data = load_all_config(config_path)
     
     if not config_data:
-        print("❌ 无法加载或生成配置文件，程序退出。")
+        logger.error("无法加载或生成配置文件，程序退出。")
         return
     
     # 交互式检查关键配置 (如果配置为空，提示用户输入)
@@ -49,11 +49,11 @@ async def async_main():
 
                             with open(config_path, 'w', encoding='utf-8') as f:
                                 json.dump(config_data, f, indent=4, ensure_ascii=False)
-                            print(f"✅ 配置已更新并保存到 {config_path}")
+                            logger.info(f"配置已更新并保存到 {config_path}")
                         except Exception as e:
-                            print(f"❌ 保存配置失败: {e}")
+                            logger.error(f"保存配置失败: {e}", exc_info=True)
         except KeyboardInterrupt:
-            print("\n取消输入")
+            logger.info("取消输入")
             return
 
     # 3. 初始化日志系统
@@ -72,6 +72,7 @@ async def async_main():
         await bot_manager.start()
     except KeyboardInterrupt:
         logger.info("正在接收停止信号...")
+        logger.debug(f"停止详情: 配置路径={config_path}, 日志级别={log_level}")
     finally:
         await bot_manager.stop()
 

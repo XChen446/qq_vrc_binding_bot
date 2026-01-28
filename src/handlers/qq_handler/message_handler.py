@@ -92,13 +92,14 @@ class MessageHandler:
         
         source = f"Group({group_id})" if group_id else f"Private({user_id})"
         logger.info(f"收到指令: {command} | Args: {args} | User: {user_id} | Source: {source}")
+        logger.debug(f"指令上下文: {context}")
 
         if not self._is_command_enabled(command):
-            logger.debug(f"指令未启用: {command}")
+            logger.debug(f"指令未启用: {command} | User: {user_id} | Group: {group_id}")
             return
 
         if not self._check_cooldown(command, user_id):
-            logger.debug(f"指令冷却中: {command} (User: {user_id})")
+            logger.debug(f"指令冷却中: {command} | User: {user_id} | Group: {group_id}")
             return
         
         try:
@@ -106,11 +107,11 @@ class MessageHandler:
             if result:
                 reply_log = str(result)
                 reply_display = reply_log[:100] + '...' if len(reply_log) > 100 else reply_log
-                logger.info(f"指令处理完成: {command} | Reply: {reply_display}")
+                logger.info(f"指令处理完成: {command} | User: {user_id} | Group: {group_id} | Reply: {reply_display}")
             else:
-                logger.info(f"指令处理完成: {command} | No Reply")
+                logger.info(f"指令处理完成: {command} | User: {user_id} | Group: {group_id} | No Reply")
         except Exception as e:
-            logger.error(f"指令处理异常: {command} | Error: {e}")
+            logger.error(f"指令处理异常: {command} | User: {user_id} | Group: {group_id} | Error: {e}", exc_info=True)
             await self._reply(data, f"❌ 指令执行出错: {e}")
 
     async def _is_user_group_admin_or_owner(self, user_id: int, group_id: Optional[int] = None) -> bool:

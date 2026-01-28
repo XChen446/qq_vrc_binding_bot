@@ -88,30 +88,34 @@ class VRCApiClient:
                 if e.status == 401:
                     # 认证失败，尝试重新登录
                     logger.warning(f"API认证失败 (401) on attempt {attempt + 1}, attempting re-authentication...")
+                    logger.debug(f"认证失败详情: User={getattr(self.config, 'username', 'Unknown')}, Attempt={attempt + 1}/{max_retries}")
                     if attempt < max_retries - 1:  # 不在最后一次尝试时重试
                         auth_success = await self.auth.login()
                         if auth_success:
                             continue  # 重试请求
                         else:
-                            logger.error("重新认证失败")
+                            logger.error(f"重新认证失败: User={getattr(self.config, 'username', 'Unknown')}")
                             break
                     else:
-                        logger.error(f"API认证失败，已达最大重试次数: {e}")
+                        logger.error(f"API认证失败，已达最大重试次数: User={getattr(self.config, 'username', 'Unknown')}, Error: {e}", exc_info=True)
                         break
                 elif e.status == 429:
                     # 请求频率过高，等待后重试
                     wait_time = 2 ** attempt  # 指数退避
                     logger.warning(f"请求频率过高 (429), 等待 {wait_time} 秒后重试...")
+                    logger.debug(f"频率限制详情: Endpoint={func.__name__}, Attempt={attempt + 1}/{max_retries}")
                     await asyncio.sleep(wait_time)
                     if attempt < max_retries - 1:
                         continue
                 else:
                     logger.error(f"API错误 ({e.status}): {e}")
+                    logger.debug(f"API错误详情: Endpoint={func.__name__}, Status={e.status}, Reason={e.reason}", exc_info=True)
                     if attempt == max_retries - 1:
                         raise e  # 如果是最后一次尝试，抛出异常
                     await asyncio.sleep(2 ** attempt)  # 指数退避
             except asyncio.TimeoutError:
                 logger.warning(f"请求超时 on attempt {attempt + 1}")
+                logger.debug(f"超时详情: Endpoint={func.__name__}, Attempt={attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)
                     continue
@@ -119,6 +123,7 @@ class VRCApiClient:
                     raise
             except ConnectionError:
                 logger.warning(f"连接错误 on attempt {attempt + 1}")
+                logger.debug(f"连接错误详情: Endpoint={func.__name__}, Attempt={attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2 ** attempt)
                     continue
@@ -126,6 +131,7 @@ class VRCApiClient:
                     raise
             except Exception as e:
                 logger.error(f"未知错误: {e}")
+                logger.debug(f"未知错误详情: Endpoint={func.__name__}, Args={args}, Kwargs={kwargs}", exc_info=True)
                 if attempt == max_retries - 1:
                     raise e
                 await asyncio.sleep(2 ** attempt)
@@ -180,7 +186,7 @@ class VRCApiClient:
                 users.append(user_dict)
             return users
         except Exception as e:
-            logger.error(f"搜索用户失败: {e}")
+            logger.error(f"搜索用户失败: Query={query}, Error: {e}", exc_info=True)
             return []
 
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -219,7 +225,7 @@ class VRCApiClient:
                 }
             return None
         except Exception as e:
-            logger.error(f"获取用户信息失败: {e}")
+            logger.error(f"获取用户信息失败: UserID={user_id}, Error: {e}", exc_info=True)
             return None
 
     # ==================== 群组相关接口 ====================

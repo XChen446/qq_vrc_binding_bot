@@ -1,7 +1,10 @@
 import sqlite3
 import os
+import logging
 from typing import Optional, List, Dict
 from .base import BaseDatabase
+
+logger = logging.getLogger("Database.SQLiteDB")
 
 class SQLiteDatabase(BaseDatabase):
     """SQLite 数据库后端实现"""
@@ -33,7 +36,7 @@ class SQLiteDatabase(BaseDatabase):
         if cursor.fetchone():
             cursor.execute("SELECT count(*) FROM global_bindings")
             if cursor.fetchone()[0] == 0:
-                print("正在迁移旧绑定数据到 global_bindings...")
+                logger.info("正在迁移旧绑定数据到 global_bindings...")
                 try:
                     cursor.execute("""
                         INSERT INTO global_bindings (qq_id, vrc_user_id, vrc_display_name, bind_time, bind_type)
@@ -41,7 +44,7 @@ class SQLiteDatabase(BaseDatabase):
                     """)
                     cursor.execute("ALTER TABLE bindings RENAME TO bindings_backup")
                 except Exception as e:
-                    print(f"数据迁移失败: {e}")
+                    logger.error(f"数据迁移失败: {e}", exc_info=True)
 
         # 全局验证表（已验证用户，无法通过群管操作删除）
         cursor.execute('''
@@ -143,7 +146,7 @@ class SQLiteDatabase(BaseDatabase):
             self.conn.commit()
             return True
         except Exception as e:
-            print(f"SQLite 绑定操作失败: {e}")
+            logger.error(f"SQLite 绑定操作失败: QQ={qq_id}, VRC_ID={vrc_user_id}, Group={group_id}, Error: {e}", exc_info=True)
             return False
 
     def unbind_user_from_group(self, group_id: int, qq_id: int) -> bool:
@@ -165,7 +168,7 @@ class SQLiteDatabase(BaseDatabase):
             self.conn.commit()
             return deleted_rows > 0
         except Exception as e:
-            print(f"SQLite 群组解绑操作失败: {e}")
+            logger.error(f"SQLite 群组解绑操作失败: Group={group_id}, QQ={qq_id}, Error: {e}", exc_info=True)
             return False
 
     def unbind_user_globally(self, qq_id: int) -> bool:
@@ -187,7 +190,7 @@ class SQLiteDatabase(BaseDatabase):
             self.conn.commit()
             return True
         except Exception as e:
-            print(f"SQLite 全局解绑操作失败: {e}")
+            logger.error(f"SQLite 全局解绑操作失败: QQ={qq_id}, Error: {e}", exc_info=True)
             return False
 
     def get_qq_by_vrc_id(self, vrc_user_id: str) -> Optional[int]:

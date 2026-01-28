@@ -92,7 +92,7 @@ class CommandHandler:
             else:
                 return self.bot.message_config.get_message('errors', 'setting_failed')
         except Exception as e:
-            logger.error(f"设置入群欢迎功能失败: {e}")
+            logger.error(f"设置入群欢迎功能失败 [Group: {group_id}, Value: {enabled}]: {e}", exc_info=True)
             return self.bot.message_config.get_message('errors', 'setting_failed')
 
     async def _set_welcome_message(self, group_id: int, value: str) -> str:
@@ -111,7 +111,7 @@ class CommandHandler:
             else:
                 return self.bot.message_config.get_message('errors', 'setting_failed')
         except Exception as e:
-            logger.error(f"设置欢迎消息失败: {e}")
+            logger.error(f"设置欢迎消息失败 [Group: {group_id}, Value: {value}]: {e}", exc_info=True)
             return self.bot.message_config.get_message('errors', 'setting_failed')
 
     async def _set_auto_approve_group_request(self, group_id: int, value: str) -> str:
@@ -135,7 +135,7 @@ class CommandHandler:
             else:
                 return self.bot.message_config.get_message('errors', 'setting_failed')
         except Exception as e:
-            logger.error(f"设置自动同意群请求功能失败: {e}")
+            logger.error(f"设置自动同意群请求功能失败 [Group: {group_id}, Value: {enabled}]: {e}", exc_info=True)
             return self.bot.message_config.get_message('errors', 'setting_failed')
 
     async def _set_auto_bind_on_join(self, group_id: int, value: str) -> str:
@@ -159,7 +159,7 @@ class CommandHandler:
             else:
                 return self.bot.message_config.get_message('errors', 'setting_failed')
         except Exception as e:
-            logger.error(f"设置自动绑定新用户功能失败: {e}")
+            logger.error(f"设置自动绑定新用户功能失败 [Group: {group_id}, Value: {enabled}]: {e}", exc_info=True)
             return self.bot.message_config.get_message('errors', 'setting_failed')
 
     async def _set_auto_reject_on_join(self, group_id: int, value: str) -> str:
@@ -183,7 +183,7 @@ class CommandHandler:
             else:
                 return self.bot.message_config.get_message('errors', 'setting_failed')
         except Exception as e:
-            logger.error(f"设置自动拒绝功能失败: {e}")
+            logger.error(f"设置自动拒绝功能失败 [Group: {group_id}, Value: {enabled}]: {e}", exc_info=True)
             return self.bot.message_config.get_message('errors', 'setting_failed')
 
     async def _set_verification_mode(self, group_id: int, value: str) -> str:
@@ -208,7 +208,7 @@ class CommandHandler:
             else:
                 return self.bot.message_config.get_message('errors', 'setting_failed')
         except Exception as e:
-            logger.error(f"设置验证模式失败: {e}")
+            logger.error(f"设置验证模式失败 [Group: {group_id}, Value: {value}]: {e}", exc_info=True)
             return self.bot.message_config.get_message('errors', 'setting_failed')
 
     async def _set_vrc_group_id(self, group_id: int, value: str) -> str:
