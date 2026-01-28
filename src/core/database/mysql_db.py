@@ -123,19 +123,22 @@ class MySQLDatabase(BaseDatabase):
         self._ensure_connection()
         try:
             with self.conn.cursor() as cursor:
-                # 1. 更新全局表
-                cursor.execute(
-                    """
-                    INSERT INTO global_bindings (qq_id, vrc_user_id, vrc_display_name, bind_type, origin_group_id)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        vrc_user_id = VALUES(vrc_user_id),
-                        vrc_display_name = VALUES(vrc_display_name),
-                        bind_type = VALUES(bind_type),
-                        origin_group_id = IF(origin_group_id IS NULL, VALUES(origin_group_id), origin_group_id)
-                    """,
-                    (qq_id, vrc_user_id, vrc_display_name, bind_type, group_id)
-                )
+                # 1. 检查全局表中记录是否存在
+                cursor.execute("SELECT COUNT(*) as cnt FROM global_bindings WHERE qq_id = %s", (qq_id,))
+                exists = cursor.fetchone()['cnt'] > 0
+                
+                if exists:
+                    # 记录已存在，保留原始的 bind_time，只更新其他字段
+                    cursor.execute(
+                        "UPDATE global_bindings SET vrc_user_id = %s, vrc_display_name = %s, bind_type = %s, origin_group_id = %s WHERE qq_id = %s",
+                        (vrc_user_id, vrc_display_name, bind_type, group_id, qq_id)
+                    )
+                else:
+                    # 记录不存在，插入新记录（包含默认的 bind_time）
+                    cursor.execute(
+                        "INSERT INTO global_bindings (qq_id, vrc_user_id, vrc_display_name, bind_type, origin_group_id) VALUES (%s, %s, %s, %s, %s)",
+                        (qq_id, vrc_user_id, vrc_display_name, bind_type, group_id)
+                    )
 
                 # 2. 如果指定了群组，更新该群的绑定表
                 if group_id:

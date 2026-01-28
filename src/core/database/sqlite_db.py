@@ -113,11 +113,23 @@ class SQLiteDatabase(BaseDatabase):
                 if row[0] is not None:
                     final_origin_group_id = row[0]
 
-            # 2. 更新全局表
-            cursor.execute(
-                "INSERT OR REPLACE INTO global_bindings (qq_id, vrc_user_id, vrc_display_name, bind_type, origin_group_id) VALUES (?, ?, ?, ?, ?)",
-                (qq_id, vrc_user_id, vrc_display_name, bind_type, final_origin_group_id)
-            )
+            # 2. 更新全局表，如果记录已存在则保留原始的 bind_time
+            # 检查记录是否存在
+            cursor.execute("SELECT COUNT(*) FROM global_bindings WHERE qq_id = ?", (qq_id,))
+            exists = cursor.fetchone()[0]
+            
+            if exists:
+                # 记录已存在，保留原始的 bind_time，只更新其他字段
+                cursor.execute(
+                    "UPDATE global_bindings SET vrc_user_id = ?, vrc_display_name = ?, bind_type = ?, origin_group_id = ? WHERE qq_id = ?",
+                    (vrc_user_id, vrc_display_name, bind_type, final_origin_group_id, qq_id)
+                )
+            else:
+                # 记录不存在，插入新记录（包含默认的 bind_time）
+                cursor.execute(
+                    "INSERT INTO global_bindings (qq_id, vrc_user_id, vrc_display_name, bind_type, origin_group_id) VALUES (?, ?, ?, ?, ?)",
+                    (qq_id, vrc_user_id, vrc_display_name, bind_type, final_origin_group_id)
+                )
             
             # 3. 如果指定了群组，更新群组表
             if group_id:
