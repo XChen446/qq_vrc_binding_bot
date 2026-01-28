@@ -120,10 +120,26 @@ class BotManager:
         logger.info("检查 VRChat 认证状态...")
         logger.debug(f"当前认证状态: {await self.vrc_client.auth.verify_auth()}")
         if not await self.vrc_client.auth.verify_auth():
-            logger.warning(f"VRChat 验证失败，尝试重新登录... 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
+            logger.warning("VRChat 验证失败，尝试重新登录...")
             if not await self.vrc_client.auth.login():
-                logger.error(f"VRChat 登录失败，请检查配置。部分功能可能不可用。 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
+                logger.error("VRChat 登录失败，请检查配置。部分功能可能不可用。")
             else:
-                logger.info(f"VRChat 重新登录成功 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
+                # 获取登录后的用户信息并显示用户名
+                try:
+                    current_user = await self.vrc_client.auth.authentication_api.get_current_user(async_req=True)
+                    if current_user and hasattr(current_user, 'display_name'):
+                        logger.info(f"VRChat 重新登录成功 用户: {current_user.display_name}")
+                    else:
+                        logger.info("VRChat 重新登录成功")
+                except Exception:
+                    logger.info("VRChat 重新登录成功")
         else:
-            logger.info(f"VRChat 认证有效 用户: {getattr(self.vrc_config, 'username', 'Unknown')}")
+            # 获取当前用户信息并显示用户名
+            try:
+                current_user = await self.vrc_client.auth.authentication_api.get_current_user(async_req=True)
+                if current_user and hasattr(current_user, 'display_name'):
+                    logger.info(f"VRChat 认证有效 用户: {current_user.display_name}")
+                else:
+                    logger.info("VRChat 认证有效")
+            except Exception:
+                logger.info("VRChat 认证有效")

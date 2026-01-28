@@ -31,7 +31,15 @@ class VRCApiClient:
         proxy = getattr(config, 'proxy', '') or (config.get('proxy') if hasattr(config, 'get') else '')
         if proxy:
             self.configuration.proxy = proxy
-        
+
+        # 设置User-Agent，从配置中获取或使用默认值
+        user_agent = getattr(config, 'user_agent', '') or (config.get('user_agent', '') if hasattr(config, 'get') else '')
+        if user_agent:
+            self.configuration.user_agent = user_agent
+        else:
+            # 设置默认User-Agent
+            self.configuration.user_agent = "VRC2QQBind_Bot/1.0 contact@example.com"
+
         # 使用ApiClient包装配置以支持异步调用
         api_client = ApiClient(self.configuration)
         

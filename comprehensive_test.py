@@ -254,6 +254,41 @@ async def test_vrc_api():
                     print(f"     - auth.{method}: ✅")
                 else:
                     print(f"     - auth.{method}: ❌")
+            
+            # 测试登录和获取用户信息
+            print("  测试登录和获取用户信息:")
+            if username and password:
+                # 尝试登录
+                login_success = await client.auth.login()
+                if login_success:
+                    print("     - 登录: ✅")
+                    
+                    # 测试获取当前用户信息
+                    try:
+                        # 使用线程池执行器来处理同步API调用
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        current_user = await loop.run_in_executor(
+                            None,
+                            lambda: client.auth.authentication_api.get_current_user(async_req=False)
+                        )
+                        if current_user and hasattr(current_user, 'id') and hasattr(current_user, 'display_name'):
+                            print(f"     - 获取当前用户ID: ✅ (ID: {current_user.id[:8]}..., Display Name: {current_user.display_name})")
+                            
+                            # 测试使用get_user获取自己的信息
+                            own_user_info = await client.get_user(current_user.id)
+                            if own_user_info and own_user_info.get('id') == current_user.id:
+                                print(f"     - 获取用户信息(get_user): ✅")
+                            else:
+                                print(f"     - 获取用户信息(get_user): ❌")
+                        else:
+                            print("     - 获取当前用户ID: ❌")
+                    except Exception as e:
+                        print(f"     - 获取当前用户信息: ❌ ({e})")
+                else:
+                    print("     - 登录: ❌ (登录失败)")
+            else:
+                print("     - 登录测试: ⚠️ (未提供用户名和密码)")
         else:
             print("  ❌ 认证实例不存在")
         
