@@ -37,12 +37,15 @@ class VRCApiClient:
         if user_agent:
             self.configuration.user_agent = user_agent
         else:
-            # 设置默认User-Agent
-            self.configuration.user_agent = "VRC2QQBind_Bot/1.0 contact@example.com"
+            # 设置默认User-Agent，遵循VRChat API要求的格式
+            self.configuration.user_agent = "Q2VBindBot/1.2 (chen@xchen.link, MiaobaiQWQ@github.com)"
 
         # 使用ApiClient包装配置以支持异步调用
         api_client = ApiClient(self.configuration)
         
+        # 重要：更新ApiClient的默认headers以确保User-Agent被正确设置
+        api_client.default_headers['User-Agent'] = self.configuration.user_agent
+
         # 初始化API实例
         self.authentication_api = authentication_api.AuthenticationApi(api_client)
         self.users_api = users_api.UsersApi(api_client)

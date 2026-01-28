@@ -19,6 +19,14 @@ class VRCAuth:
         self.configuration = configuration
         # 使用ApiClient包装configuration以支持异步调用
         api_client = ApiClient(configuration)
+        
+        # 重要：确保User-Agent被正确设置
+        if hasattr(configuration, 'user_agent') and configuration.user_agent:
+            api_client.default_headers['User-Agent'] = configuration.user_agent
+        else:
+            # 如果配置中没有设置User-Agent，则使用默认值
+            api_client.default_headers['User-Agent'] = "Q2VBindBot/1.2 (chen@xchen.link, MiaobaiQWQ@github.com)"
+
         self.authentication_api = authentication_api.AuthenticationApi(api_client)
         self._last_auth_time = 0
         self._auth_lock = asyncio.Lock()
