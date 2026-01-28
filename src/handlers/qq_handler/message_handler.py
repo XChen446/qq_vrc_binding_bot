@@ -9,6 +9,7 @@ from src.utils.code_generator import generate_verification_code
 from src.core.database.utils import safe_db_operation
 from src.utils.admin_utils import is_super_admin, is_group_admin_or_owner
 from src.handlers.qq_handler.command_handler import CommandHandler
+from src.core.message_config import MessageConfig
 
 logger = logging.getLogger("QQBot.MessageHandler")
 
@@ -216,14 +217,14 @@ class MessageHandler:
     async def _cmd_instances(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         group_id = context.get("group_id")
         if not group_id:
-            return "❌ 该指令仅限在群聊中使用喵~"
+            return self.bot.message_config.format_message('errors', 'group_only')
         return await self.bot.vrc_handler.handle_instances_command(group_id)
 
     async def _check_user_bind_status(self, user_id: int) -> Tuple[Optional[Dict], Optional[Dict], Optional[str]]:
         """检查用户绑定和验证状态，返回 (binding, verification, reply_msg_if_bound)"""
         binding = await safe_db_operation(self.bot.db.get_binding, user_id)
         if binding:
-            return binding, None, f"✅ 您已绑定 VRChat 账号 ({binding['vrc_display_name']})。"
+            return binding, None, self.bot.message_config.format_message('verification', 'already_bound', vrc_display_name=binding['vrc_display_name'])
         
         verification = await safe_db_operation(self.bot.db.get_verification, user_id)
         return None, verification, None
@@ -244,18 +245,18 @@ class MessageHandler:
         if not verification:
             vrc_info = await safe_db_operation(self.bot.db.get_pending_vrc_info, user_id)
             if not vrc_info:
-                return "❌ 您当前没有待验证的请求。请先使用 !bind [VRChat名字] 申请绑定，或联系管理员。"
+                return self.bot.message_config.get_message('errors', 'no_verification_request')
             
             # 生成新的验证码
             vrc_id = vrc_info.get("vrc_user_id")
             vrc_name = vrc_info.get("vrc_display_name")
             if not vrc_id or not vrc_name:
-                return "❌ 无法获取您的VRChat信息，请重新申请绑定。"
+                return self.bot.message_config.get_message('errors', 'unable_to_get_vrc_info')
             
             # 创建新的验证记录
             verification = await self._refresh_verification_code(user_id, vrc_id, vrc_name)
             if not verification:
-                return "❌ 生成验证码失败，请稍后重试。"
+                return self.bot.message_config.get_message('errors', 'generate_code_failed')
             
             expiry_seconds = self.bot.vrc_config.verification.get("code_expiry", 300)
             elapsed = 0  # 新生成的验证码，时间为0
@@ -285,7 +286,7 @@ class MessageHandler:
         code = verification['code']
         vrc_name = verification['vrc_display_name']
         
-        return f"您的验证码是: {code}\n有效时间剩余: {remaining}秒\n请将 VRChat 状态描述修改为此验证码，然后发送 !verify\n目标VRChat账号: {vrc_name}"
+        return self.bot.message_config.format_message('success', 'verification_code_generated', code=code, remaining=remaining, vrc_name=vrc_name)
 
     async def _cmd_verify(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         user_id = context.get("user_id")
@@ -293,10 +294,10 @@ class MessageHandler:
         
         binding, verification, reply = await self._check_user_bind_status(user_id)
         if binding:
-             return f"✅ 您已绑定 VRChat 账号 ({binding['vrc_display_name']})，无需再次验证。"
+             return self.bot.message_config.format_message('verification', 'already_bound_verify', vrc_display_name=binding['vrc_display_name'])
         
         if not verification:
-            return "❌ 您当前没有待验证的请求。如果您刚进群，请检查是否已绑定 VRChat 账号。"
+            return self.bot.message_config.format_message('other', 'no_verification_request')
             
         vrc_id = verification["vrc_user_id"]
         code = verification["code"]
@@ -305,12 +306,12 @@ class MessageHandler:
         elapsed = calculate_verification_elapsed(verification)
 
         if verification.get("is_expired") or elapsed > expiry_seconds:
-            return "❌ 验证码已过期，请使用!code重新获取。"
+            return self.bot.message_config.get_message('errors', 'verification_expired')
         
         try:
             vrc_user = await self.bot.vrc_client.get_user(vrc_id)
             if not vrc_user:
-                return "❌ 无法获取 VRChat 用户信息，请稍后再试。"
+                return self.bot.message_config.get_message('errors', 'user_not_found')
             
             status_desc = vrc_user.get("statusDescription", "")
             if code in status_desc:
@@ -326,13 +327,13 @@ class MessageHandler:
                 delete_result = await safe_db_operation(self.bot.db.delete_verification, user_id)
                 
                 if not bind_result or not delete_result:
-                    return "❌ 验证成功但保存数据失败，请联系管理员。"
+                    return self.bot.message_config.format_message('other', 'verification_save_failed')
                 
                 # 如果是首次验证，将其添加到全局验证表
                 if not global_verification:
                     await safe_db_operation(self.bot.db.add_global_verification, user_id, vrc_id, vrc_name, "verified")
                 
-                reply = f"✅ 验证成功！已绑定 VRChat 账号: {vrc_name}"
+                reply = self.bot.message_config.format_message('success', 'verification_success', vrc_name=vrc_name)
                 
                 if group_id:
                     # 使用群组配置而不是全局配置
@@ -350,31 +351,31 @@ class MessageHandler:
                     # 获取群组设置来决定是否发送欢迎消息
                     enable_welcome = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
                     if enable_welcome.lower() == "true":
-                        welcome_message = await safe_db_operation(self.bot.db.get_group_setting, group_id, "welcome_message", "欢迎！")
+                        welcome_message = await safe_db_operation(self.bot.db.get_group_setting, group_id, "welcome_message", self.bot.message_config.get_message('welcome', 'default'))
                         welcome_tpl = welcome_message.format(display_name=vrc_name, user_id=user_id)
                         reply += f"\n{welcome_tpl}"
                 
                 return reply
             else:
-                return f"❌ 验证失败。\n要求状态描述包含: {code}\n当前状态描述: {status_desc or '(空)'}\n请修改后再次输入 !verify"
+                return self.bot.message_config.format_message('verification', 'verification_failed', code=code, status_desc=status_desc or '(空)')
         except Exception as e:
             logger.error(f"验证过程出错: {e}")
-            return f"❌ 验证过程出错: {e}"
+            return self.bot.message_config.format_message('other', 'verification_process_error', error=str(e))
 
     async def _cmd_bind(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         group_id = context.get("group_id")
         if not group_id:
-             return "❌ 该指令仅限在群聊中使用"
+             return self.bot.message_config.format_message('errors', 'group_only')
 
         if len(args) < 2:
-            return "用法: !bind [QQ号] [VRChat ID/名字]"
+            return self.bot.message_config.format_message('other', 'bind_usage')
         
         target_qq = int(args[0])
 
         # 检查QQ号是否在本群
         member_info = await self.bot.qq_client.get_group_member_info(group_id, target_qq)
         if not member_info:
-            return f"❌ 无法绑定：QQ号 {target_qq} 不在本群中"
+            return self.bot.message_config.format_message('errors', 'user_not_in_group', qq_id=target_qq)
 
         vrc_query = " ".join(args[1:])
         return await self.bot.group_handler.manual_bind(target_qq, vrc_query, group_id)
@@ -384,17 +385,17 @@ class MessageHandler:
         user_id = context.get("user_id")
         
         if not group_id:
-             return "❌ 该指令仅限在群聊中使用"
+             return self.bot.message_config.format_message('other', 'group_only_command')
 
         if len(args) < 1:
-            return "用法: !unbind [QQ号]"
+            return self.bot.message_config.format_message('other', 'unbind_usage')
         
         target_qq = int(args[0])
 
         # 检查QQ号是否在本群
         member_info = await self.bot.qq_client.get_group_member_info(group_id, target_qq)
         if not member_info:
-            return f"❌ 无法解绑：QQ号 {target_qq} 不在本群中"
+            return self.bot.message_config.format_message('errors', 'user_not_in_group', qq_id=target_qq)
 
         if not is_admin:
             return None
@@ -402,9 +403,9 @@ class MessageHandler:
         # 群管只能解绑群组记录，不能影响全局验证和全局绑定
         success = await safe_db_operation(self.bot.db.unbind_user_from_group, group_id, target_qq)
         if success:
-            return f"✅ 已从本群解绑 QQ: {target_qq}"
+            return self.bot.message_config.format_message('success', 'unbind_success', qq_id=target_qq)
         else:
-            return f"❌ 解绑失败，该用户可能未在本群绑定或已解绑"
+            return self.bot.message_config.format_message('other', 'unbind_failed')
 
     async def _cmd_list(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         # 1. 检查是否在群聊中使用
@@ -453,14 +454,14 @@ class MessageHandler:
             # 检查是否已经绑定了
             current_binding = await safe_db_operation(self.bot.db.get_group_vrc_group_id, group_id)
             if current_binding:
-                return "❌ 绑定失败！本群已绑定了 VRChat 群组！请联系机器人管理员！"
+                return self.bot.message_config.get_message('errors', 'already_bound_vrc_group')
             
             # 执行绑定
             success = await safe_db_operation(self.bot.db.set_group_vrc_group_id, group_id, vrc_group_id)
             if success:
                 return f"✅ 已成功将本群绑定到 VRChat 群组: {vrc_group_id}"
             else:
-                return "❌ 绑定失败: 数据库操作错误"
+                return self.bot.message_config.get_message('errors', 'database_operation_failed')
 
         # 4. 默认逻辑：显示本群列表
         if not group_id:
@@ -477,7 +478,7 @@ class MessageHandler:
             # 获取群绑定记录
             bindings = await safe_db_operation(self.bot.db.get_group_bindings, group_id)
             if not bindings:
-                return "本群尚无已绑定的用户"
+                return self.bot.message_config.get_message('lists', 'no_bindings')
             
             # 获取QQ昵称
             data = await self._fetch_qq_names(bindings, group_id)
@@ -496,7 +497,7 @@ class MessageHandler:
             
         except Exception as e:
             logger.error(f"查询群绑定记录失败: {e}")
-            return f"❌ 查询失败: {e}"
+            return self.bot.message_config.format_message('errors', 'query_failed', error=str(e))
 
     async def _fetch_qq_names(self, bindings: List[Dict], default_group_id: int = None) -> List[Dict]:
         results = []
@@ -545,23 +546,23 @@ class MessageHandler:
             unbound_members = [m for m in members if m["user_id"] not in bound_qqs]
             
             if not unbound_members:
-                return "✅ 该群所有成员均已绑定 VRChat 账号"
+                return self.bot.message_config.get_message('lists', 'no_unbound_members')
             
             unbound_list = []
             for member in unbound_members[:50]:
                 display_name = member.get("card") or member.get("nickname") or str(member["user_id"])
                 unbound_list.append(f"{display_name} ({member['user_id']})")
             
-            reply = f"群 {target_group} 中未绑定 VRChat 的成员:\n" + "\n".join(unbound_list)
+            reply = self.bot.message_config.format_message('lists', 'unbound_members_header', group_id=target_group) + "\n" + "\n".join(unbound_list)
             
             if len(unbound_members) > 50:
-                reply += f"\n... 还有 {len(unbound_members) - 50} 人"
+                reply += "\n" + self.bot.message_config.format_message('lists', 'unbound_members_truncated', count=len(unbound_members) - 50)
             
             return reply
             
         except Exception as e:
             logger.error(f"查询未绑定成员失败: {e}")
-            return f"❌ 查询失败: {e}"
+            return self.bot.message_config.format_message('errors', 'query_failed', error=str(e))
 
     async def _cmd_search(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         if not args:
@@ -572,23 +573,23 @@ class MessageHandler:
         try:
             users = await self.bot.vrc_client.search_users(query)
             if not users:
-                return f"❌ 未找到用户: {query}"
+                return self.bot.message_config.format_message('search', 'no_results', query=query)
             
-            reply = f"找到 {len(users)} 个用户:\n"
+            reply = self.bot.message_config.format_message('search', 'results_header', count=len(users))
             for user in users[:10]:
                 display_name = user.get("displayName", "Unknown")
                 user_id = user.get("id", "Unknown")
                 status = user.get("status", "Unknown")
-                reply += f"\n{display_name} ({user_id}) - {status}"
+                reply += "\n" + self.bot.message_config.format_message('search', 'result_item', display_name=display_name, user_id=user_id, status=status)
             
             if len(users) > 10:
-                reply += f"\n... 还有 {len(users) - 10} 人"
+                reply += "\n" + self.bot.message_config.format_message('search', 'too_many_results', more_count=len(users) - 10)
             
             return reply
             
         except Exception as e:
             logger.error(f"搜索用户失败: {e}")
-            return f"❌ 搜索失败: {e}"
+            return self.bot.message_config.format_message('errors', 'search_failed', error=str(e))
 
     async def _cmd_query(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         if not args:
@@ -599,27 +600,27 @@ class MessageHandler:
         try:
             bindings = await safe_db_operation(self.bot.db.search_bindings, query)
             if not bindings:
-                return f"❌ 未找到绑定记录: {query}"
+                return self.bot.message_config.format_message('search', 'query_no_results', query=query)
             
-            reply = f"找到 {len(bindings)} 条绑定记录:\n"
+            reply = self.bot.message_config.format_message('search', 'query_results_header', count=len(bindings))
             for binding in bindings:
                 qq_id = binding.get("qq_id", "Unknown")
                 vrc_name = binding.get("vrc_display_name", "Unknown")
                 origin_group = binding.get("origin_group_id", "Unknown")
-                reply += f"\nQQ: {qq_id} -> VRChat: {vrc_name} (来自群: {origin_group})"
+                reply += "\n" + self.bot.message_config.format_message('search', 'query_result_item', qq_id=qq_id, vrc_name=vrc_name, origin_group=origin_group)
             
             return reply
             
         except Exception as e:
             logger.error(f"查询绑定记录失败: {e}")
-            return f"❌ 查询失败: {e}"
+            return self.bot.message_config.format_message('errors', 'query_failed', error=str(e))
 
     async def _cmd_me(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         user_id = context.get("user_id")
         
         binding = await safe_db_operation(self.bot.db.get_binding, user_id)
         if not binding:
-            return "❌ 您还未绑定 VRChat 账号"
+            return self.bot.message_config.get_message('profile', 'not_bound')
         
         vrc_name = binding.get("vrc_display_name", "Unknown")
         vrc_id = binding.get("vrc_user_id", "Unknown")
@@ -674,7 +675,7 @@ class MessageHandler:
             logger.error(f"生成个人信息图片失败: {e}")
         
         # 降级为文本
-        return f"您的绑定信息:\nVRChat: {vrc_name} ({vrc_id})\n绑定时间: {bind_time}\n绑定来源群: {origin_group}"
+        return self.bot.message_config.format_message('profile', 'profile_detail', vrc_name=vrc_name, vrc_id=vrc_id, bind_time=bind_time, origin_group=origin_group)
 
     async def _cmd_admin(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         user_id = context.get("user_id")
@@ -684,7 +685,7 @@ class MessageHandler:
             return None
         
         if not group_id:
-            return "❌ 该指令仅限在群聊中使用"
+            return self.bot.message_config.format_message('errors', 'group_only')
         
         if not args:
             return "用法: !admin [@某人] - 提升或取消群管理员权限"
@@ -749,7 +750,7 @@ class MessageHandler:
             # 同时添加到全局验证表
             await safe_db_operation(self.bot.db.add_global_verification, target_qq, vrc_id, vrc_name, "admin")
             
-            return f"✅ 已全局绑定 QQ {target_qq} 到 VRChat: {vrc_name}" if success else "❌ 数据库操作失败"
+            return self.bot.message_config.format_message('success', 'global_bind_success', qq_id=target_qq, vrc_name=vrc_name) if success else self.bot.message_config.get_message('errors', 'database_operation_failed')
             
         except Exception as e:
             logger.error(f"全局绑定失败: {e}")
@@ -781,7 +782,7 @@ class MessageHandler:
             
             # 然后执行全局解绑
             success = await safe_db_operation(self.bot.db.unbind_user_globally, target_qq)
-            return f"✅ 已全局解绑 QQ: {target_qq}" if success else f"❌ 解绑失败"
+            return self.bot.message_config.format_message('success', 'global_unbind_success', qq_id=target_qq) if success else self.bot.message_config.get_message('errors', 'unbind_failed')
         except Exception as e:
             logger.error(f"全局解绑失败: {e}")
             return f"❌ 解绑过程出错: {e}"
@@ -812,11 +813,11 @@ class MessageHandler:
             if success:
                 return f"✅ 已成功解除群 {target_group_id} 与 VRChat 群组的绑定"
             else:
-                return f"❌ 解绑失败: 数据库操作错误"
+                return self.bot.message_config.get_message('errors', 'database_operation_failed')
                 
         except Exception as e:
             logger.error(f"解绑群组失败: {e}")
-            return f"❌ 解绑失败: {e}"
+            return self.bot.message_config.format_message('errors', 'unbind_failed', error=str(e))
 
     async def _cmd_set(self, args: list, context: Dict[str, Any], is_admin: bool) -> str:
         """处理!set命令，用于设置群组功能开关和参数"""
@@ -825,11 +826,11 @@ class MessageHandler:
         
         # 检查是否在群聊中
         if not group_id:
-            return "❌ 此命令仅可在群聊中使用"
+            return self.bot.message_config.format_message('errors', 'not_in_group')
         
         # 检查权限
         if not is_admin:
-            return "❌ 仅群管理员或机器人超管可使用此命令"
+            return self.bot.message_config.format_message('errors', 'admin_only')
             
         # 调用命令处理器处理设置命令
         return await self.command_handler.handle_set_command(args, context)

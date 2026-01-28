@@ -137,7 +137,7 @@ python main.py --config config/config.json
 
 ## 📄 许可证
 
-[请在此处添加许可证信息]
+pass
 
 ## 🆘 支持
 

@@ -8,3 +8,4 @@ pillow>=12.1.0
 dynaconf>=3.2.12
 vrchatapi>=1.20.7
 ncatbot>=0.1.0
+PyYAML>=6.0

@@ -9,6 +9,7 @@ from typing import Dict, Any
 from src.core.global_config import GlobalConfig
 from src.core.qq_config import QQConfig
 from src.core.vrc_config import VRCConfig
+from src.core.message_config import MessageConfig
 from src.api.qq.websocket import QQWebSocketManager
 from src.api.qq.client import QQClient
 from src.api.vrc.client import VRCApiClient
@@ -27,13 +28,16 @@ class BotManager:
         # 1. 初始化配置
         self._init_configs(config_data)
         
-        # 2. 初始化核心组件 (API, DB)
+        # 2. 初始化消息配置
+        self._init_message_config()
+        
+        # 3. 初始化核心组件 (API, DB)
         self._init_components()
         
-        # 3. 延迟初始化处理器，避免循环导入
+        # 4. 延迟初始化处理器，避免循环导入
         self._init_handlers()
         
-        # 4. 绑定事件回调
+        # 5. 绑定事件回调
         self.ws_manager.on_message_callback = self.event_router.dispatch
 
     def _init_configs(self, config_data: Dict[str, Any]):
@@ -41,6 +45,10 @@ class BotManager:
         self.global_config = GlobalConfig(config_data)
         self.qq_config = QQConfig(config_data)
         self.vrc_config = VRCConfig(config_data)
+    
+    def _init_message_config(self):
+        """初始化消息配置对象"""
+        self.message_config = MessageConfig()
 
     def _init_components(self):
         """初始化各功能组件"""

@@ -222,7 +222,7 @@ class GroupHandler:
         # 4. 无任何信息，发送绑定提醒
         enable_welcome_setting = await safe_db_operation(self.bot.db.get_group_setting, group_id, "enable_welcome", "True")
         if enable_welcome_setting.lower() == "true":
-            reminder = self.bot.global_config.templates.get("reminder_not_bound", "欢迎！请绑定 VRChat 账号。")
+            reminder = self.bot.message_config.get_message("welcome", "default", default="欢迎！请绑定 VRChat 账号。")
             await self.bot.qq_client.send_group_msg(group_id, f"[CQ:at,qq={user_id}] {reminder}")
 
 
@@ -273,7 +273,7 @@ class GroupHandler:
         if self.bot.vrc_config.verification.get("check_occupy", True):
             conflict_qq = await self._check_bind_conflict(vrc_id, user_id)
             if conflict_qq:
-                reason_tpl = self.bot.global_config.templates.get("reject_already_bound", "账号已被绑定")
+                reason_tpl = self.bot.message_config.format_message("errors", "reject_already_bound", existing_qq="{existing_qq}", default="账号已被绑定")
                 return False, reason_tpl.format(existing_qq=conflict_qq)
 
         # 2. VRChat 群组验证 - 群组特定设置
@@ -288,7 +288,7 @@ class GroupHandler:
             
             is_member = await self.bot.vrc_client.get_group_member(vrc_group_id_setting, vrc_id)
             if not is_member:
-                reason = self.bot.global_config.templates.get("reject_no_group", "未加入 VRChat 群组")
+                reason = self.bot.message_config.get_message("errors", "reject_no_group", default="未加入 VRChat 群组")
                 return False, reason
 
         # 3. 风险账号 (Troll) 拦截 - 群组特定设置
@@ -297,7 +297,7 @@ class GroupHandler:
         if check_troll_bool:
             tags = vrc_user.get("tags", [])
             if "system_probable_troll" in tags:
-                reason = self.bot.global_config.templates.get("reject_troll", "风险账号")
+                reason = self.bot.message_config.get_message("errors", "reject_troll", default="风险账号")
                 return False, reason
 
         return True, None
@@ -362,15 +362,7 @@ class GroupHandler:
         await safe_db_operation(self.bot.db.add_verification, user_id, vrc_id, vrc_name, code)
         
         # 发送验证提示
-        default_tpl = (
-            "[CQ:at,qq={user_id}] 欢迎加入！\n"
-            "您申请绑定的VRChat账号为: {vrc_name}\n"
-            "将VRChat状态描述修改为以下数字：\n"
-            "{code}\n"
-            "修改完成后，请在群内发送 !verify 完成验证。"
-        )
-        verify_tpl = self.bot.global_config.templates.get("verification_request", default_tpl)
-        verify_msg = verify_tpl.format(user_id=user_id, vrc_name=vrc_name, code=code)
+        verify_msg = self.bot.message_config.format_message('verification', 'verification_request_template', user_id=user_id, vrc_name=vrc_name, code=code)
         
         await self.bot.qq_client.send_group_msg(group_id, verify_msg)
 

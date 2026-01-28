@@ -369,6 +369,54 @@ async def test_message_handling():
         traceback.print_exc()
         return False
 
+async def test_message_config():
+    """测试消息配置功能"""
+    print("\n" + "=" * 60)
+    print("6. 消息配置功能测试")
+    print("=" * 60)
+    
+    try:
+        from src.core.message_config import MessageConfig
+        
+        # 创建消息配置实例
+        msg_config = MessageConfig()
+        print("  ✅ 消息配置加载成功")
+        
+        # 测试获取不同类型的消息
+        error_msg = msg_config.get_message('errors', 'group_only')
+        if error_msg:
+            print(f"  ✅ 错误消息获取: {error_msg}")
+        else:
+            print("  ❌ 错误消息获取失败")
+        
+        success_msg = msg_config.get_message('success', 'verification_success', default="验证成功！")
+        if success_msg:
+            print(f"  ✅ 成功消息获取: {success_msg}")
+        else:
+            print("  ❌ 成功消息获取失败")
+        
+        # 测试消息格式化
+        formatted_msg = msg_config.format_message('success', 'verification_code_generated', 
+                                               code='123456', 
+                                               remaining=300, 
+                                               vrc_name='TestUser')
+        if formatted_msg:
+            print(f"  ✅ 消息格式化: {formatted_msg[:50]}...")
+        else:
+            print("  ❌ 消息格式化失败")
+        
+        # 测试不存在的消息
+        missing_msg = msg_config.get_message('nonexistent', 'key')
+        print(f"  ✅ 缺失消息处理: '{missing_msg}'")
+        
+        return True
+    except Exception as e:
+        print(f"  ❌ 消息配置测试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 async def test_performance():
     """测试性能和并发处理能力"""
     print("\n" + "=" * 60)
@@ -435,6 +483,7 @@ async def run_comprehensive_test():
     results['database'] = await test_database_operations()
     results['vrc_api'] = await test_vrc_api()
     results['message_handling'] = await test_message_handling()
+    results['message_config'] = await test_message_config()
     results['performance'] = await test_performance()
     
     # 输出总结

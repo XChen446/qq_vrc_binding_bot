@@ -2,6 +2,7 @@ import json
 import os
 import logging
 from typing import Dict, Any, Optional, List
+from .message_config import MessageConfig
 
 logger = logging.getLogger("Config")
 
@@ -189,6 +190,8 @@ class GlobalConfig:
             data: 配置数据字典
         """
         self.data = data
+        # 初始化消息配置
+        self._message_config = MessageConfig()
     
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值
@@ -258,3 +261,12 @@ class GlobalConfig:
             return self.data[name]
             
         raise AttributeError(f"'GlobalConfig' object has no attribute '{name}'")
+    
+    @property
+    def templates(self):
+        """模板消息已迁移到独立的消息配置文件中
+        
+        Returns:
+            None - 所有模板消息现在应通过bot.message_config访问
+        """
+        raise AttributeError("Templates have been moved to message_config. Use bot.message_config instead.")
