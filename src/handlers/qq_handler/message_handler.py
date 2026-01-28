@@ -92,7 +92,7 @@ class MessageHandler:
         
         source = f"Group({group_id})" if group_id else f"Private({user_id})"
         logger.info(f"收到指令: {command} | Args: {args} | User: {user_id} | Source: {source}")
-        logger.debug(f"指令上下文: {context}")
+        logger.debug(f"指令上下文: {data}")
 
         if not self._is_command_enabled(command):
             logger.debug(f"指令未启用: {command} | User: {user_id} | Group: {group_id}")

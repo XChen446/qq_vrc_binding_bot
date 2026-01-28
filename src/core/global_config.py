@@ -20,7 +20,6 @@ class ConfigLoader:
                 "on_success": "archive"  # 成功时的日志归档策略: archive(归档), delete(删除), keep(保留)
             },
             "admin_qq": [],  # 全局超级管理员QQ号列表，这些用户拥有所有管理员权限
-
             "commands": {
                 "query": { "enabled": True, "admin_only": True, "max_results": 50 },  # 查询绑定信息命令
                 "bind": { "enabled": True, "admin_only": True },  # 手动绑定命令
@@ -65,7 +64,7 @@ class ConfigLoader:
             "username": "",  # VRChat用户名
             "password": "",  # VRChat密码
             "totp_secret": "",  # VRChat两步验证密钥(可选)
-            "user_agent": "VRCQQBot/2.0",  # VRChat API用户代理
+            "user_agent": "VRC2QQBind_Bot/1.0 (chen@xchen.link)",  # VRChat API用户表头（如果您不清楚这意味着什么，请不要更改）
             "proxy": ""  # 代理服务器地址，格式如: http://127.0.0.1:8080
         }
     }
