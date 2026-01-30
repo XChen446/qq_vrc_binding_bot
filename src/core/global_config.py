@@ -64,7 +64,7 @@ class ConfigLoader:
             "username": "",  # VRChat用户名
             "password": "",  # VRChat密码
             "totp_secret": "",  # VRChat两步验证密钥(可选)
-            "user_agent": "Q2VBindBot/1.2 (chen@xchen.link, MiaobaiQWQ@github.com)",  # VRChat API用户表头（如果您不清楚这意味着什么，请不要更改）
+            "user_agent": "VRC2QQBind_Bot/1.0 (chen@xchen.link)",  # VRChat API用户表头（如果您不清楚这意味着什么，请不要更改）
             "proxy": ""  # 代理服务器地址，格式如: http://127.0.0.1:8080
         }
     }
