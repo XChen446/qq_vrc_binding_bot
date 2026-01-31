@@ -28,7 +28,7 @@ class VRCAuth:
         # 从client实例获取API客户端，确保所有API实例共享同一个ApiClient
         # 这样可以确保认证信息在所有API实例之间共享
         self.authentication_api = client.authentication_api
-        self.users_api = client.users_api  # 添加users_api引用，以便后续可能需要使用
+        self.users_api = client.users_api
         self._last_auth_time = 0
         self._auth_lock = asyncio.Lock()
 
@@ -165,7 +165,6 @@ class VRCAuth:
                         verification_type = "totp"
                     else:
                         verification_type = "totp"  # 默认
-                        
                     auth_success = await self._handle_two_factor_auth(totp_secret, verification_type)
                     if auth_success:
                         # 双因素认证成功后保存认证信息
@@ -176,7 +175,6 @@ class VRCAuth:
                     logger.error(f"认证失败 (401): {e.body}")
                     return False
                 elif e.status == 429:
-                    # 根据规则，429状态码可能是提醒用户查看邮箱的情况
                     if "email" in error_body_lower or "hold your horses" in error_body_lower or "something to that email" in error_body_lower:
                         logger.info("服务器提示检查邮箱，需要邮箱验证码")
                         auth_success = await self._handle_two_factor_auth(totp_secret, "emailOtp")

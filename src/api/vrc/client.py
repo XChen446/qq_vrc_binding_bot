@@ -108,7 +108,7 @@ class VRCApiClient:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None,
-                    lambda: func(*args, **kwargs)  # 移除了async_req=True
+                    lambda: func(*args, **kwargs)  
                 )
                 return result
             except ApiException as e:
@@ -177,7 +177,7 @@ class VRCApiClient:
             api_response = await self._make_authenticated_request(
                 self.users_api.get_users,
                 search=query, n=10
-                # 移除了async_req=True
+                
             )
             
             if not api_response:
@@ -222,7 +222,7 @@ class VRCApiClient:
             user = await self._make_authenticated_request(
                 self.users_api.get_user,
                 user_id=user_id
-                # 移除了async_req=True
+                
             )
             if user:
                 result = {
@@ -262,7 +262,7 @@ class VRCApiClient:
                 self.groups_api.get_group_member,
                 group_id=group_id, 
                 user_id=user_id
-                # 移除了async_req=True
+                
             )
             if member:
                 return {
@@ -298,7 +298,7 @@ class VRCApiClient:
                 group_id=group_id,
                 user_id=user_id,
                 json_role_id=role_id
-                # 移除了async_req=True
+                
             )
             return response
         except Exception as e:
@@ -312,7 +312,7 @@ class VRCApiClient:
             group = await self._make_authenticated_request(
                 self.groups_api.get_group,
                 group_id=group_id
-                # 移除了async_req=True
+                
             )
             if group:
                 return [{
@@ -344,7 +344,7 @@ class VRCApiClient:
             group = await self._make_authenticated_request(
                 self.groups_api.get_group,
                 group_id=group_id
-                # 移除了async_req=True
+                
             )
             if group:
                 result = {
