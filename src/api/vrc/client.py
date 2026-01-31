@@ -1,15 +1,12 @@
-import os
-import logging
 import asyncio
+import logging
 import time
 from typing import Optional, Dict, Any, List
-import vrchatapi
+
+from vrchatapi import ApiClient
 from vrchatapi.api import authentication_api, users_api, groups_api
-from vrchatapi.models.two_factor_auth_code import TwoFactorAuthCode
-from vrchatapi.models.two_factor_email_code import TwoFactorEmailCode
 from vrchatapi.configuration import Configuration
 from vrchatapi.rest import ApiException
-from vrchatapi import ApiClient
 
 logger = logging.getLogger("VRChatAPI")
 
@@ -41,15 +38,16 @@ class VRCApiClient:
             self.configuration.user_agent = "Q2VBindBot/1.2 (chen@xchen.link, MiaobaiQWQ@github.com)"
 
         # 使用ApiClient包装配置以支持异步调用
-        api_client = ApiClient(self.configuration)
+        # 关键：创建单个ApiClient实例，所有API实例都将共享它
+        self.api_client = ApiClient(self.configuration)
         
         # 重要：更新ApiClient的默认headers以确保User-Agent被正确设置
-        api_client.default_headers['User-Agent'] = self.configuration.user_agent
+        self.api_client.default_headers['User-Agent'] = self.configuration.user_agent
 
-        # 初始化API实例
-        self.authentication_api = authentication_api.AuthenticationApi(api_client)
-        self.users_api = users_api.UsersApi(api_client)
-        self.groups_api = groups_api.GroupsApi(api_client)
+        # 初始化API实例 - 确保所有API实例都使用同一个api_client
+        self.authentication_api = authentication_api.AuthenticationApi(self.api_client)
+        self.users_api = users_api.UsersApi(self.api_client)
+        self.groups_api = groups_api.GroupsApi(self.api_client)
         
         # 延迟初始化认证类，避免构造时的导入问题
         self._auth = None
@@ -89,10 +87,11 @@ class VRCApiClient:
                 await self._rate_limit(func.__name__)
                 
                 # 执行API调用 - 使用线程池执行器来实现异步调用
+                # 注意：移除了async_req=True参数，因为这会导致返回ApplyResult对象
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
                     None,
-                    lambda: func(*args, **kwargs)
+                    lambda: func(*args, **kwargs)  # 移除了async_req=True
                 )
                 return result
             except ApiException as e:
@@ -160,8 +159,8 @@ class VRCApiClient:
             # 否则进行搜索
             api_response = await self._make_authenticated_request(
                 self.users_api.get_users,
-                search=query, n=10,
-                async_req=True
+                search=query, n=10
+                # 移除了async_req=True
             )
             
             if not api_response:
@@ -205,11 +204,11 @@ class VRCApiClient:
         try:
             user = await self._make_authenticated_request(
                 self.users_api.get_user,
-                user_id=user_id,
-                async_req=True
+                user_id=user_id
+                # 移除了async_req=True
             )
             if user:
-                return {
+                result = {
                     "id": user.id,
                     "username": user.username,
                     "displayName": user.display_name,
@@ -218,22 +217,20 @@ class VRCApiClient:
                     "status": user.status,
                     "statusDescription": user.status_description,
                     "bio": user.bio,
-                    "isBanned": user.is_banned,
-                    "isBoopingEnabled": user.is_booping_enabled,
                     "date_joined": user.date_joined,
                     "last_platform": user.last_platform,
                     "allow_avatar_copying": user.allow_avatar_copying,
                     "tags": user.tags,
                     "developer_type": user.developer_type,
-                    "moderation_status": user.moderation_status,
                     "badges": user.badges,
-                    "thumbnail_url": user.thumbnail_url,
                     "profile_pic_override": user.profile_pic_override,
                     "user_icon": user.user_icon,
                     "location": user.location,
-                    "home_location": user.home_location,
                     "state": user.state
                 }
+                # 输出用户名日志确保可靠性
+                logger.debug(f"成功获取用户信息: ID={result['id']}, DisplayName={result['displayName']}, Username={result['username']}")
+                return result
             return None
         except Exception as e:
             logger.error(f"获取用户信息失败: UserID={user_id}, Error: {e}", exc_info=True)
@@ -247,8 +244,8 @@ class VRCApiClient:
             member = await self._make_authenticated_request(
                 self.groups_api.get_group_member,
                 group_id=group_id, 
-                user_id=user_id,
-                async_req=True
+                user_id=user_id
+                # 移除了async_req=True
             )
             if member:
                 return {
@@ -283,8 +280,8 @@ class VRCApiClient:
                 self.groups_api.add_group_role,
                 group_id=group_id,
                 user_id=user_id,
-                json_role_id=role_id,
-                async_req=True
+                json_role_id=role_id
+                # 移除了async_req=True
             )
             return response
         except Exception as e:
@@ -297,8 +294,8 @@ class VRCApiClient:
             # 尝试获取群组信息作为替代
             group = await self._make_authenticated_request(
                 self.groups_api.get_group,
-                group_id=group_id,
-                async_req=True
+                group_id=group_id
+                # 移除了async_req=True
             )
             if group:
                 return [{
@@ -329,11 +326,11 @@ class VRCApiClient:
         try:
             group = await self._make_authenticated_request(
                 self.groups_api.get_group,
-                group_id=group_id,
-                async_req=True
+                group_id=group_id
+                # 移除了async_req=True
             )
             if group:
-                return {
+                result = {
                     "id": group.id,
                     "name": group.name,
                     "shortCode": group.short_code,
@@ -355,6 +352,7 @@ class VRCApiClient:
                     "isFeatured": group.is_featured,
                     "isPublic": group.is_public
                 }
+                return result
             return None
         except Exception as e:
             logger.error(f"获取群组信息失败: {e}")
