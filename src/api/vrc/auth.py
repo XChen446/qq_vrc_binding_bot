@@ -69,7 +69,7 @@ class VRCAuth:
             # 尝试获取当前用户信息来验证会话
             current_user = await asyncio.get_event_loop().run_in_executor(
                 None, 
-                lambda: self.authentication_api.get_current_user(async_req=True)
+                lambda: self.authentication_api.get_current_user()
             )
             if current_user and hasattr(current_user, 'display_name'):
                 logger.info(f"当前用户: {current_user.display_name}")
@@ -90,7 +90,7 @@ class VRCAuth:
             # 直接尝试获取当前用户信息来触发登录
             current_user = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self.authentication_api.get_current_user(async_req=True)
+                lambda: self.authentication_api.get_current_user()
             )
             
             # 检查是否需要2FA
@@ -169,13 +169,13 @@ class VRCAuth:
                 two_factor_request = TwoFactorAuthCode(code=code)
                 await asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: self.authentication_api.verify2_fa(two_factor_auth_code=two_factor_request, async_req=True)
+                    lambda: self.authentication_api.verify2_fa(two_factor_auth_code=two_factor_request)
                 )
             elif method == "email":
                 email_code_request = TwoFactorEmailCode(code=code)
                 await asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda: self.authentication_api.verify2_fa_email_code(two_factor_email_code=email_code_request, async_req=True)
+                    lambda: self.authentication_api.verify2_fa_email_code(two_factor_email_code=email_code_request)
                 )
             
             logger.info("2FA 验证通过")
@@ -197,7 +197,7 @@ class VRCAuth:
         try:
             current_user = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self.authentication_api.get_current_user(async_req=True)
+                lambda: self.authentication_api.get_current_user()
             )
             if current_user and hasattr(current_user, 'display_name'):
                 logger.info(f"当前用户: {current_user.display_name}")

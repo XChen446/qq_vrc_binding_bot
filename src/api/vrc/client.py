@@ -160,9 +160,7 @@ class VRCApiClient:
             # 否则进行搜索
             api_response = await self._make_authenticated_request(
                 self.users_api.get_users,
-                search=query, n=10,
-                async_req=True
-            )
+                search=query, n=10)
             
             if not api_response:
                 return []
@@ -205,9 +203,7 @@ class VRCApiClient:
         try:
             user = await self._make_authenticated_request(
                 self.users_api.get_user,
-                user_id=user_id,
-                async_req=True
-            )
+                user_id=user_id)
             if user:
                 return {
                     "id": user.id,
@@ -247,9 +243,7 @@ class VRCApiClient:
             member = await self._make_authenticated_request(
                 self.groups_api.get_group_member,
                 group_id=group_id, 
-                user_id=user_id,
-                async_req=True
-            )
+                user_id=user_id)
             if member:
                 return {
                     "userId": member.user_id,
@@ -283,9 +277,7 @@ class VRCApiClient:
                 self.groups_api.add_group_role,
                 group_id=group_id,
                 user_id=user_id,
-                json_role_id=role_id,
-                async_req=True
-            )
+                json_role_id=role_id)
             return response
         except Exception as e:
             logger.error(f"添加群组角色失败: {e}")
@@ -297,9 +289,7 @@ class VRCApiClient:
             # 尝试获取群组信息作为替代
             group = await self._make_authenticated_request(
                 self.groups_api.get_group,
-                group_id=group_id,
-                async_req=True
-            )
+                group_id=group_id)
             if group:
                 return [{
                     "id": group.id,
@@ -329,9 +319,7 @@ class VRCApiClient:
         try:
             group = await self._make_authenticated_request(
                 self.groups_api.get_group,
-                group_id=group_id,
-                async_req=True
-            )
+                group_id=group_id)
             if group:
                 return {
                     "id": group.id,

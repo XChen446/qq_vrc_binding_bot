@@ -126,7 +126,7 @@ class BotManager:
             else:
                 # 获取登录后的用户信息并显示用户名
                 try:
-                    current_user = await self.vrc_client.auth.authentication_api.get_current_user(async_req=True)
+                    current_user = await self.vrc_client.auth.authentication_api.get_current_user()
                     if current_user and hasattr(current_user, 'display_name'):
                         logger.info(f"VRChat 重新登录成功 用户: {current_user.display_name}")
                     else:
@@ -136,7 +136,7 @@ class BotManager:
         else:
             # 获取当前用户信息并显示用户名
             try:
-                current_user = await self.vrc_client.auth.authentication_api.get_current_user(async_req=True)
+                current_user = await self.vrc_client.auth.authentication_api.get_current_user()
                 if current_user and hasattr(current_user, 'display_name'):
                     logger.info(f"VRChat 认证有效 用户: {current_user.display_name}")
                 else:
