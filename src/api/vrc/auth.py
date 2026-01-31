@@ -373,19 +373,27 @@ class VRCAuth:
             config_path: 配置文件路径
         """
         try:
-            # 获取当前API客户端的cookie信息
+            # 从cookie jar中获取认证相关的cookie
+            cookie_jar = self.authentication_api.api_client.rest_client.cookie_jar
             cookies_dict = {}
             
-            # 从ApiClient中提取认证相关的cookie
-            if hasattr(self.authentication_api.api_client, 'cookie'):
-                cookie_str = self.authentication_api.api_client.cookie
-                if cookie_str:
-                    # 解析cookie字符串
-                    for cookie_part in cookie_str.split(';'):
-                        cookie_part = cookie_part.strip()
-                        if '=' in cookie_part:
-                            key, value = cookie_part.split('=', 1)
-                            cookies_dict[key] = value
+            # 获取特定域名下的cookie
+            if "api.vrchat.cloud" in cookie_jar._cookies:
+                domain_cookies = cookie_jar._cookies["api.vrchat.cloud"]["/"]
+                if "auth" in domain_cookies:
+                    cookies_dict["auth"] = domain_cookies["auth"].value
+                if "twoFactorAuth" in domain_cookies:
+                    cookies_dict["twoFactorAuth"] = domain_cookies["twoFactorAuth"].value
+            else:
+                # 尝试其他可能的域名格式
+                for domain, paths in cookie_jar._cookies.items():
+                    if "/" in paths:
+                        domain_cookies = paths["/"]
+                        if "auth" in domain_cookies:
+                            cookies_dict["auth"] = domain_cookies["auth"].value
+                        if "twoFactorAuth" in domain_cookies:
+                            cookies_dict["twoFactorAuth"] = domain_cookies["twoFactorAuth"].value
+                        break
             
             # 获取用户名等信息
             credentials = {
@@ -403,8 +411,19 @@ class VRCAuth:
                 json.dump(credentials, f, indent=2, ensure_ascii=False)
                 
             logger.info(f"认证信息已保存到 {config_path}")
+            logger.debug(f"保存的认证信息: auth={'***' if credentials.get('auth') else 'null'}, twoFactorAuth={'***' if credentials.get('twoFactorAuth') else 'null'}")
         except Exception as e:
             logger.error(f"保存认证凭据失败: {e}", exc_info=True)
+            # 即使出错也记录下当前的用户名
+            credentials = {
+                'username': getattr(self.configuration, 'username', ''),
+                'auth': None,
+                'twoFactorAuth': None,
+                'last_updated': time.time()
+            }
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(credentials, f, indent=2, ensure_ascii=False)
 
     def load_credentials(self, config_path: str = "data/cookies.txt"):
         """
@@ -426,19 +445,27 @@ class VRCAuth:
             two_fa_cookie = credentials.get('twoFactorAuth')
             
             if auth_cookie or two_fa_cookie:
-                cookie_parts = []
+                # 使用GitHub示例中的方法设置cookie到cookie jar
+                from http.cookiejar import Cookie
+                
+                def make_cookie(name, value):
+                    return Cookie(0, name, value,
+                                  None, False,
+                                  "api.vrchat.cloud", True, False,
+                                  "/", False,
+                                  False,
+                                  9999999999,  # 设置一个未来的过期时间
+                                  False,
+                                  None,
+                                  None, {})
+                
+                # 获取cookie jar并设置认证cookie
+                cookie_jar = self.client.authentication_api.api_client.rest_client.cookie_jar
+                
                 if auth_cookie:
-                    cookie_parts.append(f"auth={auth_cookie}")
+                    cookie_jar.set_cookie(make_cookie("auth", auth_cookie))
                 if two_fa_cookie:
-                    cookie_parts.append(f"twoFactorAuth={two_fa_cookie}")
-                
-                cookie_str = "; ".join(cookie_parts)
-                
-                # 重要：确保所有API实例都能使用相同的cookie
-                # 更新client实例中所有API的cookie
-                self.client.authentication_api.api_client.cookie = cookie_str
-                self.client.users_api.api_client.cookie = cookie_str
-                self.client.groups_api.api_client.cookie = cookie_str
+                    cookie_jar.set_cookie(make_cookie("twoFactorAuth", two_fa_cookie))
                 
                 logger.info(f"从 {config_path} 恢复认证信息")
                 return True

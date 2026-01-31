@@ -55,6 +55,23 @@ class VRCApiClient:
         # 请求限流设置
         self._last_request_time = {}
         self._min_request_interval = 0.1  # 最小请求间隔（秒）
+        
+        # 在初始化时尝试加载已有的认证信息
+        self.load_existing_auth()
+
+    def load_existing_auth(self):
+        """尝试加载已保存的认证信息"""
+        try:
+            from .auth import VRCAuth
+            # 创建临时认证实例来加载认证信息
+            temp_auth = VRCAuth(self, self.configuration)
+            success = temp_auth.load_credentials(self.cookie_path)
+            if success:
+                logger.info("已从本地文件加载认证信息")
+            else:
+                logger.debug("本地认证信息文件不存在或无效")
+        except Exception as e:
+            logger.error(f"加载本地认证信息时出错: {e}")
 
     @property
     def auth(self):
